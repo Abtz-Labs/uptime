@@ -1,0 +1,8 @@
+# Database files
+*.sqlite3
+*.sqlite
+*.db
+
+# Server PID file
+.server.pid
+
