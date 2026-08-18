@@ -167,6 +167,18 @@ $prod = array_values(array_filter($r['body'], fn($g) => $g['id'] == $groupId))[0
 assert_eq('Production Env', $prod['name'] ?? '', 'group name updated');
 assert_eq(5, $prod['position'] ?? -1, 'group position updated');
 
+$r = req('reorder_groups', ['ids' => [$groupId2, $groupId]], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'reorder_groups succeeds');
+
+$r = req('list_groups');
+$prod = array_values(array_filter($r['body'], fn($g) => $g['id'] == $groupId))[0] ?? null;
+$staging = array_values(array_filter($r['body'], fn($g) => $g['id'] == $groupId2))[0] ?? null;
+assert_eq(1, $prod['position'] ?? -1, 'reorder: production moved to position 1');
+assert_eq(0, $staging['position'] ?? -1, 'reorder: staging moved to position 0');
+
+$r = req('reorder_groups', ['ids' => []], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'reorder_groups rejects empty ids');
+
 // ─── SITES ───────────────────────────────────────────────
 section('Sites');
 

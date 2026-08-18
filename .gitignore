@@ -6,3 +6,5 @@
 # Server PID file
 .server.pid
 
+# Misc
+docs/plans/*.md

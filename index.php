@@ -499,6 +499,7 @@ if ($action) {
         'create_group' => apiCreateGroup(),
         'update_group' => apiUpdateGroup(),
         'delete_group' => apiDeleteGroup(),
+        'reorder_groups' => apiReorderGroups(),
 
         // Webhooks
         'list_webhooks' => apiListWebhooks(),
@@ -1432,6 +1433,13 @@ function serveDashboard(): void {
             accent-color: var(--primary);
         }
         .checkbox-group label { margin-bottom: 0; cursor: pointer; }
+        .drag-handle {
+            cursor: grab;
+            color: var(--text-muted);
+            user-select: none;
+        }
+        .drag-handle:active { cursor: grabbing; }
+        .sortable-ghost { opacity: 0.4; }
         .form-actions { display: flex; gap: 0.5rem; justify-content: space-between; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
         .modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 0 -1.5rem 1rem -1.5rem; padding: 0 1.5rem; }
         .modal-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 0.75rem 1rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
@@ -1471,6 +1479,7 @@ function serveDashboard(): void {
             .hide-mobile { display: none; }
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
 <body>
     <div class="topbar">
@@ -2016,19 +2025,30 @@ function serveDashboard(): void {
                 return;
             }
 
-            let html = '<table><thead><tr><th>Name</th><th>Position</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table id="group-sortable"><thead><tr><th></th><th>Name</th><th>Actions</th></tr></thead><tbody>';
             for (const group of groups) {
-                html += `<tr>
+                html += `<tr data-id="${group.id}">
+                    <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
                     <td>${escapeHtml(group.name)}</td>
-                    <td>${group.position}</td>
                     <td>
-                        <button class="btn btn-sm" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}', ${group.position})">Edit</button>
+                        <button class="btn btn-sm" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}', ${group.position ?? 0})">Edit</button>
                         <button class="btn btn-sm btn-danger" onclick="deleteGroup(${group.id}, '${escapeHtml(group.name)}')">Delete</button>
                     </td>
                 </tr>`;
             }
             html += '</tbody></table>';
             container.innerHTML = html;
+
+            Sortable.create(document.querySelector('#group-sortable tbody'), {
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: async function () {
+                    const ids = [...document.querySelectorAll('#group-sortable tbody tr')]
+                        .map(tr => parseInt(tr.dataset.id));
+                    await api('reorder_groups', { ids }, 'POST');
+                }
+            });
         }
 
         function showGroupModal(group = null) {
@@ -2490,6 +2510,22 @@ function apiDeleteGroup(): void {
 
     $db = getDb();
     $db->prepare("DELETE FROM groups WHERE id = ?")->execute([$id]);
+    jsonResponse(['ok' => true]);
+}
+
+function apiReorderGroups(): void {
+    requireAuth();
+    $input = getInput();
+    $ids = $input['ids'] ?? [];
+    if (!is_array($ids) || count($ids) === 0) jsonResponse(['error' => 'Missing ids'], 400);
+
+    $db = getDb();
+    $db->exec('BEGIN');
+    $stmt = $db->prepare("UPDATE groups SET position = ? WHERE id = ?");
+    foreach ($ids as $position => $id) {
+        $stmt->execute([(int) $position, (int) $id]);
+    }
+    $db->exec('COMMIT');
     jsonResponse(['ok' => true]);
 }
 
