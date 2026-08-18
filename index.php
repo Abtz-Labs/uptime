@@ -50,6 +50,14 @@ function getDb(): PDO {
 
 function initDatabase(): void {
     $db = getDb();
+    // Migration: detect old webhooks table without site_id, drop to recreate below
+    $tables = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='webhooks'")->fetch();
+    if ($tables) {
+        $cols = $db->query("PRAGMA table_info(webhooks)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('site_id', $cols)) {
+            $db->exec("DROP TABLE webhooks");
+        }
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -105,12 +113,15 @@ function initDatabase(): void {
         );
         CREATE TABLE IF NOT EXISTS webhooks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            site_id INTEGER NOT NULL,
             url TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'generic',
             enabled INTEGER DEFAULT 1,
             events TEXT DEFAULT 'down,recover',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
         );
+        CREATE INDEX IF NOT EXISTS idx_webhooks_site ON webhooks(site_id);
         CREATE TABLE IF NOT EXISTS login_attempts (
             ip TEXT NOT NULL,
             attempted_at TEXT DEFAULT (datetime('now'))
@@ -247,7 +258,9 @@ function clearAttempts(): void {
 
 function sendNotifications(int $siteId, string $event, string $siteName, string $siteUrl, ?string $message = null): void {
     $db = getDb();
-    $hooks = $db->query("SELECT * FROM webhooks WHERE enabled = 1")->fetchAll();
+    $stmt = $db->prepare("SELECT * FROM webhooks WHERE enabled = 1 AND site_id = ?");
+    $stmt->execute([$siteId]);
+    $hooks = $stmt->fetchAll();
     if (!$hooks) return;
 
     foreach ($hooks as $hook) {
@@ -1216,20 +1229,7 @@ function serveDashboard(): void {
             align-items: center;
             justify-content: center;
         }
-        .theme-toggle {
-            background: none;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text);
-            font-size: 1.125rem;
-            width: 36px;
-            height: 36px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .theme-toggle:hover, .hamburger:hover { opacity: 0.8; }
+        .hamburger:hover { opacity: 0.8; }
         .nav-links {
             display: flex;
             gap: 0.5rem;
@@ -1398,6 +1398,7 @@ function serveDashboard(): void {
             padding: 1rem;
         }
         .modal-overlay.active { display: flex; }
+        #confirm-modal { z-index: 150; }
         .modal {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -1431,7 +1432,14 @@ function serveDashboard(): void {
             accent-color: var(--primary);
         }
         .checkbox-group label { margin-bottom: 0; cursor: pointer; }
-        .form-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+        .form-actions { display: flex; gap: 0.5rem; justify-content: space-between; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+        .modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 0 -1.5rem 1rem -1.5rem; padding: 0 1.5rem; }
+        .modal-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 0.75rem 1rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
+        .modal-tabs button:hover { color: var(--text); }
+        .modal-tabs button.active { color: var(--text); border-bottom-color: var(--primary); }
+        .modal-tab { display: none; }
+        .modal-tab.active { display: block; }
+        .modal-lg { max-width: 640px; }
         .empty { text-align: center; padding: 2rem; color: var(--text-muted); }
         .toast {
             position: fixed;
@@ -1455,23 +1463,9 @@ function serveDashboard(): void {
         .toast.error { border-color: var(--red); color: var(--red); }
         .toast.success { border-color: var(--green); color: var(--green); }
         @media (max-width: 640px) {
-            .hamburger { display: flex; order: 1; }
-            .theme-toggle { order: 0; }
-            .nav-links {
-                display: none;
-                position: absolute;
-                top: 100%;
-                left: 0;
-                right: 0;
-                background: var(--surface);
-                border-bottom: 1px solid var(--border);
-                flex-direction: column;
-                padding: 0.5rem;
-                gap: 0;
-                z-index: 50;
-            }
-            .nav-links.open { display: flex; }
-            .nav-links button, .nav-link-btn { width: 100%; text-align: left; padding: 0.75rem 1rem; }
+            .nav-links { display: none !important; }
+            .user-dropdown { display: none !important; }
+            .hamburger { display: flex; }
             table { font-size: 0.875rem; }
             th, td { padding: 0.375rem; }
             .hide-mobile { display: none; }
@@ -1480,13 +1474,12 @@ function serveDashboard(): void {
 </head>
 <body>
     <div class="topbar">
-        <h1><?= htmlspecialchars($appName) ?></h1>
+        <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= htmlspecialchars($appName) ?></h1>
         <div class="topbar-right">
             <nav class="nav-links" id="nav-links">
-                <button class="active" onclick="showSection('sites')">Sites</button>
-                <button onclick="showSection('groups')">Groups</button>
-                <button onclick="showSection('webhooks')">Webhooks</button>
-                <a href="/" target="_blank" class="nav-link-btn">Status Page</a>
+                <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
+                <button onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+                <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             </nav>
             <div class="user-dropdown">
                 <button class="user-trigger" onclick="document.getElementById('user-menu').classList.toggle('open')">
@@ -1495,28 +1488,25 @@ function serveDashboard(): void {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <div class="user-menu" id="user-menu">
-                    <button onclick="showSection('account'); closeUserMenu()">Account</button>
-                    <button onclick="showSection('settings'); closeUserMenu()">Settings</button>
+                    <button onclick="showAccountModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Account</button>
+                    <button onclick="showSettingsModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button>
                     <hr>
-                    <button onclick="logout()">Logout</button>
+                    <button onclick="toggleTheme()" id="theme-toggle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg><span id="theme-toggle-label">Theme</span></button>
+                    <button onclick="logout()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>Logout</button>
                 </div>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-            </button>
             <button class="hamburger" onclick="document.getElementById('mobile-menu').classList.toggle('open')" aria-label="Menu">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
         </div>
         <nav class="mobile-menu" id="mobile-menu">
-            <button class="active" onclick="showSection('sites')">Sites</button>
-            <button onclick="showSection('groups')">Groups</button>
-            <button onclick="showSection('webhooks')">Webhooks</button>
-            <a href="/" target="_blank" class="nav-link-btn">Status Page</a>
+            <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
+            <button onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+            <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             <hr>
-            <button onclick="showSection('account')">Account</button>
-            <button onclick="showSection('settings')">Settings</button>
-            <button onclick="logout()">Logout</button>
+            <button onclick="showAccountModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Account</button>
+            <button onclick="showSettingsModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button>
+            <button onclick="logout()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>Logout</button>
         </nav>
     </div>
     <div class="content">
@@ -1538,29 +1528,28 @@ function serveDashboard(): void {
             <div id="groups-list"><div class="empty">Loading...</div></div>
         </div>
 
-        <!-- Webhooks Section -->
-        <div id="webhooks" class="section">
-            <div class="section-header">
-                <h2>Webhooks</h2>
-                <button class="btn" onclick="showWebhookModal()">+ Add Webhook</button>
-            </div>
-            <div id="webhooks-list"><div class="empty">Loading...</div></div>
-        </div>
+    </div>
 
-        <!-- Account Section -->
-        <div id="account" class="section">
-            <div class="section-header">
-                <h2>Account</h2>
-            </div>
+    <!-- Account Modal -->
+    <div class="modal-overlay" id="account-modal">
+        <div class="modal modal-lg">
+            <h3>Account</h3>
             <div id="account-form"><div class="empty">Loading...</div></div>
-        </div>
-
-        <!-- Settings Section -->
-        <div id="settings" class="section">
-            <div class="section-header">
-                <h2>Settings</h2>
+            <div class="form-actions">
+                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('account-modal')">Close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <h3>Settings</h3>
             <div id="settings-form"><div class="empty">Loading...</div></div>
+            <div class="form-actions">
+                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('settings-modal')">Cancel</button>
+                <button type="button" class="btn" onclick="saveSettings()">Save</button>
+            </div>
         </div>
     </div>
 
@@ -1583,69 +1572,111 @@ function serveDashboard(): void {
     <div class="modal-overlay" id="site-modal">
         <div class="modal">
             <h3 id="site-modal-title">Add Site</h3>
-            <form id="site-form">
-                <input type="hidden" id="site-id">
-                <div class="form-group">
-                    <label for="site-name">Name</label>
-                    <input type="text" id="site-name" required>
+            <div class="modal-tabs" id="site-modal-tabs">
+                <button class="active" onclick="switchSiteTab('site')">Site</button>
+                <button id="site-modal-webhooks-tab" style="display:none" onclick="switchSiteTab('webhooks')">Webhooks</button>
+            </div>
+            <div class="modal-tab active" id="site-tab-site">
+                <form id="site-form">
+                    <input type="hidden" id="site-id">
+                    <div class="form-group">
+                        <label for="site-name">Name</label>
+                        <input type="text" id="site-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="site-url">URL</label>
+                        <input type="url" id="site-url" required placeholder="https://example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="site-method">Method</label>
+                        <select id="site-method">
+                            <option value="GET">GET</option>
+                            <option value="HEAD">HEAD</option>
+                            <option value="POST">POST</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="site-expected-status">Expected Status</label>
+                        <input type="number" id="site-expected-status" value="200">
+                    </div>
+                    <div class="form-group">
+                        <label for="site-expected-keyword">Expected Keyword (optional)</label>
+                        <input type="text" id="site-expected-keyword">
+                    </div>
+                    <div class="form-group">
+                        <label for="site-timeout">Timeout (seconds)</label>
+                        <input type="number" id="site-timeout" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label for="site-interval">Check Interval</label>
+                        <select id="site-interval">
+                            <option value="60">Every minute</option>
+                            <option value="120">Every 2 minutes</option>
+                            <option value="300">Every 5 minutes</option>
+                            <option value="600">Every 10 minutes</option>
+                            <option value="900">Every 15 minutes</option>
+                            <option value="1800">Every 30 minutes</option>
+                            <option value="3600">Every hour</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="site-group">Group</label>
+                        <select id="site-group"><option value="">None</option></select>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="site-enabled" checked>
+                        <label for="site-enabled">Enabled</label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="site-visible" checked>
+                        <label for="site-visible">Visible on status page</label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="site-notify" checked>
+                        <label for="site-notify">Send notifications</label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-tab" id="site-tab-webhooks">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+                    <span style="font-size:0.875rem;color:var(--text-muted)">Manage webhooks for this site</span>
+                    <button type="button" class="btn btn-sm" onclick="toggleWebhookForm()">+ Add</button>
                 </div>
-                <div class="form-group">
-                    <label for="site-url">URL</label>
-                    <input type="url" id="site-url" required placeholder="https://example.com">
+                <div id="site-webhooks-list"></div>
+                <div id="site-webhook-form" style="display:none;margin-top:0.75rem;padding:0.75rem;background:var(--bg);border-radius:var(--radius)">
+                    <div class="form-group">
+                        <label for="site-webhook-url">URL</label>
+                        <input type="url" id="site-webhook-url" required placeholder="https://hooks.slack.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="site-webhook-type">Type</label>
+                        <select id="site-webhook-type">
+                            <option value="generic">Generic JSON</option>
+                            <option value="slack">Slack</option>
+                            <option value="telegram">Telegram</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Events</label>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="site-webhook-event-down" checked>
+                            <label for="site-webhook-event-down">Down</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="site-webhook-event-recover" checked>
+                            <label for="site-webhook-event-recover">Recover</label>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem">
+                        <button type="button" class="btn btn-sm" onclick="saveSiteWebhook()">Save</button>
+                        <button type="button" class="btn btn-sm" style="background:var(--gray)" onclick="toggleWebhookForm()">Cancel</button>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="site-method">Method</label>
-                    <select id="site-method">
-                        <option value="GET">GET</option>
-                        <option value="HEAD">HEAD</option>
-                        <option value="POST">POST</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="site-expected-status">Expected Status</label>
-                    <input type="number" id="site-expected-status" value="200">
-                </div>
-                <div class="form-group">
-                    <label for="site-expected-keyword">Expected Keyword (optional)</label>
-                    <input type="text" id="site-expected-keyword">
-                </div>
-                <div class="form-group">
-                    <label for="site-timeout">Timeout (seconds)</label>
-                    <input type="number" id="site-timeout" value="10">
-                </div>
-                <div class="form-group">
-                    <label for="site-interval">Check Interval</label>
-                    <select id="site-interval">
-                        <option value="60">Every minute</option>
-                        <option value="120">Every 2 minutes</option>
-                        <option value="300">Every 5 minutes</option>
-                        <option value="600">Every 10 minutes</option>
-                        <option value="900">Every 15 minutes</option>
-                        <option value="1800">Every 30 minutes</option>
-                        <option value="3600">Every hour</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="site-group">Group</label>
-                    <select id="site-group"><option value="">None</option></select>
-                </div>
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="site-enabled" checked>
-                    <label for="site-enabled">Enabled</label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="site-visible" checked>
-                    <label for="site-visible">Visible on status page</label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="site-notify" checked>
-                    <label for="site-notify">Send notifications</label>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('site-modal')">Cancel</button>
-                    <button type="submit" class="btn">Save</button>
-                </div>
-            </form>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('site-modal')">Cancel</button>
+                <button type="button" class="btn" id="site-modal-save-btn">Save</button>
+            </div>
         </div>
     </div>
 
@@ -1659,6 +1690,10 @@ function serveDashboard(): void {
                     <label for="group-name">Name</label>
                     <input type="text" id="group-name" required>
                 </div>
+                <div class="form-group">
+                    <label for="group-position">Position</label>
+                    <input type="number" id="group-position" value="0" min="0">
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('group-modal')">Cancel</button>
                     <button type="submit" class="btn">Save</button>
@@ -1667,53 +1702,24 @@ function serveDashboard(): void {
         </div>
     </div>
 
-    <!-- Webhook Modal -->
-    <div class="modal-overlay" id="webhook-modal">
-        <div class="modal">
-            <h3 id="webhook-modal-title">Add Webhook</h3>
-            <form id="webhook-form">
-                <input type="hidden" id="webhook-id">
-                <div class="form-group">
-                    <label for="webhook-url">URL</label>
-                    <input type="url" id="webhook-url" required placeholder="https://hooks.slack.com/...">
-                </div>
-                <div class="form-group">
-                    <label for="webhook-type">Type</label>
-                    <select id="webhook-type">
-                        <option value="generic">Generic JSON</option>
-                        <option value="slack">Slack</option>
-                        <option value="telegram">Telegram</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Events</label>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="webhook-event-down" checked>
-                        <label for="webhook-event-down">Down</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="webhook-event-recover" checked>
-                        <label for="webhook-event-recover">Recover</label>
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('webhook-modal')">Cancel</button>
-                    <button type="submit" class="btn">Save</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <script>
+        const SUN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+        const MOON_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+        function setThemeUI(isLight) {
+            const btn = document.getElementById('theme-toggle-btn');
+            if (btn) btn.innerHTML = (isLight ? MOON_ICON : SUN_ICON) + '<span id="theme-toggle-label">' + (isLight ? 'Dark mode' : 'Light mode') + '</span>';
+        }
         function applyTheme() {
             const saved = localStorage.getItem('theme');
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const isLight = saved ? saved === 'light' : !prefersDark;
             document.documentElement.classList.toggle('light', isLight);
+            setThemeUI(isLight);
         }
         function toggleTheme() {
             const isLight = document.documentElement.classList.toggle('light');
             localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            setThemeUI(isLight);
         }
         applyTheme();
 
@@ -1732,20 +1738,53 @@ function serveDashboard(): void {
         function showSection(id) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.getElementById(id).classList.add('active');
-            document.querySelectorAll('.nav-links button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => b.classList.remove('active'));
             event.target.classList.add('active');
-            document.getElementById('nav-links').classList.remove('open');
+            closeUserMenu();
+            closeMobileMenu();
             history.replaceState(null, '', '#' + id);
             if (id === 'sites') loadSites();
             if (id === 'groups') loadGroups();
-            if (id === 'webhooks') loadWebhooks();
-            if (id === 'account') loadAccount();
-            if (id === 'settings') loadSettings();
+        }
+
+        function showAccountModal() {
+            closeUserMenu();
+            closeMobileMenu();
+            loadAccount();
+            document.getElementById('account-modal').classList.add('active');
+        }
+
+        function showSettingsModal() {
+            closeUserMenu();
+            closeMobileMenu();
+            loadSettings();
+            document.getElementById('settings-modal').classList.add('active');
         }
 
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
+
+        function focusFirstInput(modalId) {
+            requestAnimationFrame(() => {
+                const el = document.querySelector(`#${modalId} input:not([type=hidden]):not([type=checkbox]), #${modalId} select`);
+                if (el) el.focus();
+            });
+        }
+
+        function closeUserMenu() {
+            document.getElementById('user-menu').classList.remove('open');
+        }
+
+        function closeMobileMenu() {
+            document.getElementById('mobile-menu').classList.remove('open');
+        }
+
+        // Close menus when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.user-dropdown')) closeUserMenu();
+            if (!e.target.closest('.hamburger') && !e.target.closest('.mobile-menu')) closeMobileMenu();
+        });
 
         async function logout() {
             await api('auth_logout', {}, 'POST');
@@ -1789,6 +1828,14 @@ function serveDashboard(): void {
             }
         }
 
+        function switchSiteTab(tab) {
+            document.querySelectorAll('#site-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#site-modal .modal-tab').forEach(t => t.classList.remove('active'));
+            const btn = document.querySelector(`#site-modal .modal-tabs button[onclick*="${tab}"]`);
+            if (btn) btn.classList.add('active');
+            document.getElementById('site-tab-' + tab).classList.add('active');
+        }
+
         function showSiteModal(site = null) {
             loadGroupOptions();
             document.getElementById('site-modal-title').textContent = site ? 'Edit Site' : 'Add Site';
@@ -1804,7 +1851,17 @@ function serveDashboard(): void {
             document.getElementById('site-enabled').checked = site ? !!site.enabled : true;
             document.getElementById('site-visible').checked = site ? !!site.visible : true;
             document.getElementById('site-notify').checked = site ? !!site.notify : true;
+            const whTab = document.getElementById('site-modal-webhooks-tab');
+            if (site && site.id) {
+                whTab.style.display = '';
+                document.getElementById('site-webhook-form').style.display = 'none';
+                loadSiteWebhooks(site.id);
+            } else {
+                whTab.style.display = 'none';
+            }
+            switchSiteTab('site');
             document.getElementById('site-modal').classList.add('active');
+            focusFirstInput('site-modal');
         }
 
         async function editSite(id) {
@@ -1836,10 +1893,118 @@ function serveDashboard(): void {
                 notify: document.getElementById('site-notify').checked ? 1 : 0,
             };
             if (id) data.id = id;
-            await api(id ? 'update_site' : 'create_site', data, 'POST');
-            closeModal('site-modal');
-            loadSites();
+            const res = await api(id ? 'update_site' : 'create_site', data, 'POST');
+            if (!id && res.id) {
+                document.getElementById('site-id').value = res.id;
+                document.getElementById('site-modal-title').textContent = 'Edit Site';
+                document.getElementById('site-modal-webhooks-tab').style.display = '';
+                document.getElementById('site-webhooks-list').innerHTML = '<div class="empty" style="font-size:0.875rem">No webhooks yet.</div>';
+                loadSites();
+            } else {
+                closeModal('site-modal');
+                loadSites();
+            }
         });
+
+        document.getElementById('site-modal-save-btn').addEventListener('click', () => {
+            if (document.getElementById('site-tab-site').classList.contains('active')) {
+                document.getElementById('site-form').requestSubmit();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const active = document.querySelector('.modal-overlay.active');
+                if (active) { closeModal(active.id); e.preventDefault(); }
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+                const siteModal = document.getElementById('site-modal');
+                if (siteModal.classList.contains('active')) {
+                    e.preventDefault();
+                    document.getElementById('site-modal-save-btn').click();
+                }
+            }
+        });
+
+        // ─── SITE WEBHOOKS (embedded in site modal) ──────
+        async function loadSiteWebhooks(siteId) {
+            const webhooks = await api('list_webhooks', { site_id: siteId }, 'POST');
+            const container = document.getElementById('site-webhooks-list');
+            if (!webhooks.length) {
+                container.innerHTML = '<div class="empty" style="font-size:0.875rem">No webhooks yet.</div>';
+                return;
+            }
+            let html = '';
+            for (const h of webhooks) {
+                html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.375rem 0;border-bottom:1px solid var(--border);font-size:0.875rem">
+                    <div style="min-width:0">
+                        <span style="font-weight:500">${escapeHtml(h.type)}</span>
+                        <span style="color:var(--text-muted);margin-left:0.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;max-width:180px;vertical-align:middle">${escapeHtml(h.url)}</span>
+                        <span style="color:var(--text-muted);margin-left:0.5rem">${escapeHtml(h.events)}</span>
+                    </div>
+                    <div style="display:flex;gap:0.25rem;flex-shrink:0">
+                        <button type="button" class="btn btn-sm" onclick="testSiteWebhook(${h.id}, this)" title="Test">Test</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="deleteSiteWebhook(${h.id})">Delete</button>
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function toggleWebhookForm() {
+            const form = document.getElementById('site-webhook-form');
+            const isOpen = form.style.display !== 'none';
+            form.style.display = isOpen ? 'none' : '';
+            if (!isOpen) {
+                document.getElementById('site-webhook-url').value = '';
+                document.getElementById('site-webhook-type').value = 'generic';
+                document.getElementById('site-webhook-event-down').checked = true;
+                document.getElementById('site-webhook-event-recover').checked = true;
+            }
+        }
+
+        async function saveSiteWebhook() {
+            const siteId = document.getElementById('site-id').value;
+            if (!siteId) return;
+            const events = [];
+            if (document.getElementById('site-webhook-event-down').checked) events.push('down');
+            if (document.getElementById('site-webhook-event-recover').checked) events.push('recover');
+            const data = {
+                site_id: parseInt(siteId),
+                url: document.getElementById('site-webhook-url').value,
+                type: document.getElementById('site-webhook-type').value,
+                events: events.join(','),
+            };
+            await api('create_webhook', data, 'POST');
+            toggleWebhookForm();
+            loadSiteWebhooks(siteId);
+        }
+
+        async function deleteSiteWebhook(id) {
+            if (!await showConfirm('Delete Webhook', 'Delete this webhook?')) return;
+            const siteId = document.getElementById('site-id').value;
+            await api('delete_webhook', { id }, 'POST');
+            loadSiteWebhooks(siteId);
+        }
+
+        async function testSiteWebhook(id, btn) {
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            try {
+                const res = await api('test_webhook', { id }, 'POST');
+                if (res.error) {
+                    btn.textContent = 'Failed';
+                    showToast('Test failed: ' + res.error, 'error');
+                } else {
+                    btn.textContent = 'Sent!';
+                    showToast('Test webhook sent successfully', 'success');
+                }
+            } catch {
+                btn.textContent = 'Failed';
+                showToast('Test failed: network error', 'error');
+            }
+            setTimeout(() => { btn.textContent = 'Test'; btn.disabled = false; }, 2000);
+        }
 
         // ─── GROUPS ──────────────────────────────────────
         async function loadGroups() {
@@ -1870,7 +2035,9 @@ function serveDashboard(): void {
             document.getElementById('group-modal-title').textContent = group ? 'Edit Group' : 'Add Group';
             document.getElementById('group-id').value = group ? group.id : '';
             document.getElementById('group-name').value = group ? group.name : '';
+            document.getElementById('group-position').value = group ? (group.position ?? 0) : 0;
             document.getElementById('group-modal').classList.add('active');
+            focusFirstInput('group-modal');
         }
 
         function editGroup(id, name, position) {
@@ -1886,69 +2053,14 @@ function serveDashboard(): void {
         document.getElementById('group-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = document.getElementById('group-id').value;
-            const data = { name: document.getElementById('group-name').value };
+            const data = {
+                name: document.getElementById('group-name').value,
+                position: parseInt(document.getElementById('group-position').value) || 0,
+            };
             if (id) data.id = id;
             await api(id ? 'update_group' : 'create_group', data, 'POST');
             closeModal('group-modal');
             loadGroups();
-        });
-
-        // ─── WEBHOOKS ───────────────────────────────────
-        async function loadWebhooks() {
-            const webhooks = await api('list_webhooks');
-            const container = document.getElementById('webhooks-list');
-
-            if (!webhooks.length) {
-                container.innerHTML = '<div class="empty">No webhooks configured.</div>';
-                return;
-            }
-
-            let html = '<table><thead><tr><th>Type</th><th>URL</th><th>Events</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
-            for (const hook of webhooks) {
-                html += `<tr>
-                    <td>${escapeHtml(hook.type)}</td>
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(hook.url)}</td>
-                    <td>${escapeHtml(hook.events)}</td>
-                    <td>${hook.enabled ? 'Yes' : 'No'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-danger" onclick="deleteWebhook(${hook.id})">Delete</button>
-                    </td>
-                </tr>`;
-            }
-            html += '</tbody></table>';
-            container.innerHTML = html;
-        }
-
-        function showWebhookModal() {
-            document.getElementById('webhook-id').value = '';
-            document.getElementById('webhook-url').value = '';
-            document.getElementById('webhook-type').value = 'generic';
-            document.getElementById('webhook-event-down').checked = true;
-            document.getElementById('webhook-event-recover').checked = true;
-            document.getElementById('webhook-modal').classList.add('active');
-        }
-
-        async function deleteWebhook(id) {
-            if (!await showConfirm('Delete Webhook', 'Delete this webhook?')) return;
-            await api('delete_webhook', { id }, 'POST');
-            loadWebhooks();
-        }
-
-        document.getElementById('webhook-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const events = [];
-            if (document.getElementById('webhook-event-down').checked) events.push('down');
-            if (document.getElementById('webhook-event-recover').checked) events.push('recover');
-            const data = {
-                url: document.getElementById('webhook-url').value,
-                type: document.getElementById('webhook-type').value,
-                events: events.join(','),
-            };
-            const id = document.getElementById('webhook-id').value;
-            if (id) data.id = id;
-            await api(id ? 'update_webhook' : 'create_webhook', data, 'POST');
-            closeModal('webhook-modal');
-            loadWebhooks();
         });
 
         // ─── ACCOUNT ─────────────────────────────────────
@@ -1957,35 +2069,33 @@ function serveDashboard(): void {
             const user = status.user;
             const container = document.getElementById('account-form');
             container.innerHTML = `
-                <div class="card">
-                    <h3 style="margin-bottom:1rem">Profile</h3>
-                    <div class="form-group">
-                        <label for="account-name">Name</label>
-                        <input type="text" id="account-name" value="${escapeHtml(user.name)}">
-                    </div>
-                    <div class="form-group">
-                        <label for="account-email">Email</label>
-                        <input type="email" id="account-email" value="${escapeHtml(user.email)}">
-                    </div>
-                    <button class="btn" onclick="saveAccount()">Save Profile</button>
+                <h4 style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-muted)">Profile</h4>
+                <div class="form-group">
+                    <label for="account-name">Name</label>
+                    <input type="text" id="account-name" value="${escapeHtml(user.name)}">
                 </div>
-                <div class="card">
-                    <h3 style="margin-bottom:1rem">Change Password</h3>
-                    <div class="form-group">
-                        <label for="account-current-password">Current Password</label>
-                        <input type="password" id="account-current-password">
-                    </div>
-                    <div class="form-group">
-                        <label for="account-new-password">New Password</label>
-                        <input type="password" id="account-new-password" minlength="6">
-                    </div>
-                    <div class="form-group">
-                        <label for="account-confirm-password">Confirm New Password</label>
-                        <input type="password" id="account-confirm-password" minlength="6">
-                    </div>
-                    <button class="btn" onclick="changePassword()">Change Password</button>
+                <div class="form-group">
+                    <label for="account-email">Email</label>
+                    <input type="email" id="account-email" value="${escapeHtml(user.email)}">
                 </div>
+                <button class="btn btn-sm" onclick="saveAccount()">Save Profile</button>
+                <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--border)">
+                <h4 style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-muted)">Change Password</h4>
+                <div class="form-group">
+                    <label for="account-current-password">Current Password</label>
+                    <input type="password" id="account-current-password">
+                </div>
+                <div class="form-group">
+                    <label for="account-new-password">New Password</label>
+                    <input type="password" id="account-new-password" minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="account-confirm-password">Confirm New Password</label>
+                    <input type="password" id="account-confirm-password" minlength="6">
+                </div>
+                <button class="btn btn-sm" onclick="changePassword()">Change Password</button>
             `;
+            focusFirstInput('account-modal');
         }
 
         async function saveAccount() {
@@ -2017,18 +2127,16 @@ function serveDashboard(): void {
             const settings = await api('get_settings');
             const container = document.getElementById('settings-form');
             container.innerHTML = `
-                <div class="card">
-                    <div class="form-group">
-                        <label for="settings-app-name">App Name</label>
-                        <input type="text" id="settings-app-name" value="${escapeHtml(settings.app_name || '')}">
-                    </div>
-                    <div class="form-group">
-                        <label for="settings-retention">Retention (days)</label>
-                        <input type="number" id="settings-retention" value="${settings.retention_days || 180}">
-                    </div>
-                    <button class="btn" onclick="saveSettings()">Save</button>
+                <div class="form-group">
+                    <label for="settings-app-name">App Name</label>
+                    <input type="text" id="settings-app-name" value="${escapeHtml(settings.app_name || '')}">
+                </div>
+                <div class="form-group">
+                    <label for="settings-retention">Retention (days)</label>
+                    <input type="number" id="settings-retention" value="${settings.retention_days || 180}">
                 </div>
             `;
+            focusFirstInput('settings-modal');
         }
 
         async function saveSettings() {
@@ -2037,6 +2145,7 @@ function serveDashboard(): void {
                 retention_days: parseInt(document.getElementById('settings-retention').value),
             }, 'POST');
             showToast('Settings saved');
+            closeModal('settings-modal');
         }
 
         // ─── HELPERS ─────────────────────────────────────
@@ -2059,6 +2168,7 @@ function serveDashboard(): void {
                 document.getElementById('confirm-title').textContent = title;
                 document.getElementById('confirm-message').textContent = message;
                 document.getElementById('confirm-modal').classList.add('active');
+                document.getElementById('confirm-ok').focus();
                 const okBtn = document.getElementById('confirm-ok');
                 const handler = () => {
                     okBtn.removeEventListener('click', handler);
@@ -2074,20 +2184,17 @@ function serveDashboard(): void {
         }
 
         // Load initial data from URL hash
-        const validSections = ['sites', 'groups', 'webhooks', 'account', 'settings'];
+        const validSections = ['sites', 'groups'];
         const initialSection = location.hash.replace('#', '');
         if (validSections.includes(initialSection)) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.getElementById(initialSection).classList.add('active');
-            document.querySelectorAll('.nav-links button').forEach(b => {
+            document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => {
                 b.classList.remove('active');
                 if (b.textContent.trim().toLowerCase() === initialSection) b.classList.add('active');
             });
             if (initialSection === 'sites') loadSites();
             else if (initialSection === 'groups') loadGroups();
-            else if (initialSection === 'webhooks') loadWebhooks();
-            else if (initialSection === 'account') loadAccount();
-            else if (initialSection === 'settings') loadSettings();
         } else {
             loadSites();
         }
@@ -2263,7 +2370,7 @@ function apiCreateSite(): void {
         $input['expected_keyword'] ?? '',
         $input['timeout'] ?? 10,
         $input['interval'] ?? 60,
-        $input['group_id'] ?: null,
+        ($input['group_id'] ?? null) ?: null,
         $input['enabled'] ?? 1,
         $input['visible'] ?? 1,
         $input['notify'] ?? 1,
@@ -2392,9 +2499,14 @@ function apiDeleteGroup(): void {
 
 function apiListWebhooks(): void {
     requireAuth();
+    $input = getInput();
+    $siteId = (int) ($input['site_id'] ?? 0);
+    if (!$siteId) jsonResponse(['error' => 'Missing site_id'], 400);
+
     $db = getDb();
-    $webhooks = $db->query("SELECT * FROM webhooks ORDER BY created_at DESC")->fetchAll();
-    jsonResponse($webhooks);
+    $stmt = $db->prepare("SELECT * FROM webhooks WHERE site_id = ? ORDER BY created_at DESC");
+    $stmt->execute([$siteId]);
+    jsonResponse($stmt->fetchAll());
 }
 
 function apiCreateWebhook(): void {
@@ -2402,13 +2514,20 @@ function apiCreateWebhook(): void {
     $input = getInput();
     $url = trim($input['url'] ?? '');
     $type = $input['type'] ?? 'generic';
+    $siteId = (int) ($input['site_id'] ?? 0);
 
+    if (!$siteId) jsonResponse(['error' => 'Missing site_id'], 400);
     if (!$url) jsonResponse(['error' => 'URL is required'], 400);
     if (!filter_var($url, FILTER_VALIDATE_URL)) jsonResponse(['error' => 'Invalid URL'], 400);
     if (!in_array($type, ['slack', 'telegram', 'generic'])) jsonResponse(['error' => 'Invalid type'], 400);
 
     $db = getDb();
-    $db->prepare("INSERT INTO webhooks (url, type, events) VALUES (?, ?, ?)")->execute([$url, $type, $input['events'] ?? 'down,recover']);
+    // Verify site exists
+    $check = $db->prepare("SELECT id FROM sites WHERE id = ?");
+    $check->execute([$siteId]);
+    if (!$check->fetch()) jsonResponse(['error' => 'Site not found'], 404);
+
+    $db->prepare("INSERT INTO webhooks (site_id, url, type, events) VALUES (?, ?, ?, ?)")->execute([$siteId, $url, $type, $input['events'] ?? 'down,recover']);
     jsonResponse(['id' => (int) $db->lastInsertId()]);
 }
 

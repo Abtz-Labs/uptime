@@ -5,12 +5,23 @@ default:
 # Dev server
 start port="3030" mode="foreground":
     #!/usr/bin/env bash
-    if [ "{{mode}}" = "foreground" ]; then
-        php -S localhost:{{port}} index.php
+    # Handle: just start background -> swap args
+    if [ "{{port}}" = "background" ]; then
+        port=3030
+        mode=background
+    elif [ "{{port}}" = "fg" ] || [ "{{port}}" = "foreground" ]; then
+        port=3030
+        mode=foreground
     else
-        php -S localhost:{{port}} index.php > /dev/null 2>&1 &
+        mode="{{mode}}"
+    fi
+
+    if [ "$mode" = "foreground" ]; then
+        php -S localhost:$port index.php
+    else
+        php -S localhost:$port index.php > /dev/null 2>&1 &
         echo $! > .server.pid
-        echo "Server started on port {{port}} (PID: $(cat .server.pid))"
+        echo "Server started on port $port (PID: $(cat .server.pid))"
     fi
 
 # Stop dev server

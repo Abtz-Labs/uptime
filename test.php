@@ -159,9 +159,13 @@ assert_eq(2, count($r['body']), 'two groups after create');
 $r = req('update_group', ['id' => $groupId, 'name' => 'Production Env'], 'POST', $adminCsrf);
 assert_eq(200, $r['status'], 'update group name');
 
+$r = req('update_group', ['id' => $groupId, 'position' => 5], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update group position');
+
 $r = req('list_groups');
 $prod = array_values(array_filter($r['body'], fn($g) => $g['id'] == $groupId))[0] ?? null;
 assert_eq('Production Env', $prod['name'] ?? '', 'group name updated');
+assert_eq(5, $prod['position'] ?? -1, 'group position updated');
 
 // ─── SITES ───────────────────────────────────────────────
 section('Sites');
@@ -231,32 +235,61 @@ $site = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0]
 assert_true(!empty($site['status']), 'site has status field');
 assert_true(in_array($site['status'], ['up', 'down', 'unknown']), 'site status is valid');
 
-// ─── WEBHOOKS ───────────────────────────────────────────
+// ─── WEBHOOKS (per-site) ─────────────────────────────────
 section('Webhooks');
 
-$r = req('list_webhooks');
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(200, $r['status'], 'list_webhooks returns 200');
 assert_eq(0, count($r['body']), 'no webhooks initially');
 
-$r = req('create_webhook', ['url' => 'https://hooks.slack.com/test', 'type' => 'slack'], 'POST', $adminCsrf);
+$r = req('create_webhook', ['url' => 'https://hooks.slack.com/test', 'type' => 'slack', 'site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(200, $r['status'], 'create webhook succeeds');
 $webhookId = $r['body']['id'];
 
-$r = req('create_webhook', ['url' => 'not-a-url', 'type' => 'generic'], 'POST', $adminCsrf);
+$r = req('create_webhook', ['url' => 'not-a-url', 'type' => 'generic', 'site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(400, $r['status'], 'invalid URL rejected');
 
-$r = req('create_webhook', ['url' => 'https://example.com', 'type' => 'invalid'], 'POST', $adminCsrf);
+$r = req('create_webhook', ['url' => 'https://example.com', 'type' => 'invalid', 'site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(400, $r['status'], 'invalid type rejected');
 
-$r = req('list_webhooks');
-assert_eq(1, count($r['body']), 'one webhook after create');
+$r = req('create_webhook', ['url' => 'https://example.com', 'type' => 'generic'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'missing site_id rejected');
+
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
+assert_eq(1, count($r['body']), 'one webhook for this site');
 assert_eq('slack', $r['body'][0]['type'], 'webhook type is slack');
+assert_eq($siteId, (int)$r['body'][0]['site_id'], 'webhook belongs to correct site');
 
 $r = req('delete_webhook', ['id' => $webhookId], 'POST', $adminCsrf);
 assert_eq(200, $r['status'], 'delete webhook succeeds');
 
-$r = req('list_webhooks');
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(0, count($r['body']), 'no webhooks after delete');
+
+// Cascade delete: create webhook → delete site → webhooks gone
+$r = req('create_webhook', ['url' => 'https://hooks.slack.com/cascade', 'type' => 'slack', 'site_id' => $siteId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create webhook for cascade test');
+$cascadeWebhookId = $r['body']['id'];
+
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
+assert_eq(1, count($r['body']), 'one webhook before site delete');
+
+// Create a throwaway site to delete (preserve $siteId for later tests)
+$r = req('create_site', ['name' => 'Cascade Test', 'url' => 'https://cascade.test'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create cascade test site');
+$cascadeSiteId = $r['body']['id'];
+$r = req('create_webhook', ['url' => 'https://hooks.slack.com/cascade2', 'type' => 'generic', 'site_id' => $cascadeSiteId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create webhook on cascade site');
+
+$r = req('delete_site', ['id' => $cascadeSiteId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'delete cascade site');
+
+$r = req('list_webhooks', ['site_id' => $cascadeSiteId], 'POST', $adminCsrf);
+assert_eq(0, count($r['body']), 'webhooks cascade-deleted with site');
+
+// Original webhook still intact
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
+assert_eq(1, count($r['body']), 'other site webhooks unaffected');
 
 // ─── STATUS PAGE ────────────────────────────────────────
 section('Status Page');
