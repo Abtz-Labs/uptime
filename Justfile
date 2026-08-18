@@ -3,23 +3,21 @@ default:
     @just --list
 
 # Dev server
-start port="3030" mode="foreground":
+start *args:
     #!/usr/bin/env bash
-    # Handle: just start background -> swap args
-    if [ "{{port}}" = "background" ]; then
-        port=3030
-        mode=background
-    elif [ "{{port}}" = "fg" ] || [ "{{port}}" = "foreground" ]; then
-        port=3030
-        mode=foreground
-    else
-        mode="{{mode}}"
-    fi
-
+    port="3030"
+    mode="foreground"
+    for arg in {{args}}; do
+        if [ "$arg" = "background" ]; then
+            mode="background"
+        elif [[ "$arg" =~ ^[0-9]+$ ]]; then
+            port="$arg"
+        fi
+    done
     if [ "$mode" = "foreground" ]; then
-        php -S localhost:$port index.php
+        php -S 127.0.0.1:$port index.php
     else
-        php -S localhost:$port index.php > /dev/null 2>&1 &
+        php -S 127.0.0.1:$port index.php > /dev/null 2>&1 &
         echo $! > .server.pid
         echo "Server started on port $port (PID: $(cat .server.pid))"
     fi
@@ -30,7 +28,7 @@ stop:
         kill $(cat .server.pid) 2>/dev/null && echo "Server stopped" || echo "Server not running"; \
         rm -f .server.pid; \
     else \
-        echo "No server PID file found"; \
+        echo "No server running"; \
     fi
 
 # Run test suite
