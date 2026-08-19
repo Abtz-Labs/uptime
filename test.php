@@ -109,6 +109,8 @@ assert_eq(false, $r['body']['authenticated'], 'not authenticated initially');
 $r = req('auth_setup', ['name' => 'Admin', 'email' => 'admin@test.com', 'password' => 'admin123'], 'POST');
 assert_eq(200, $r['status'], 'setup succeeds');
 assert_true(!empty($r['body']['csrf_token']), 'returns CSRF token');
+assert_true(!empty($r['body']['recovery_key']), 'setup returns recovery key');
+$recoveryKey = $r['body']['recovery_key'];
 $adminCsrf = $r['body']['csrf_token'];
 
 $r = req('auth_status');
@@ -136,6 +138,66 @@ assert_eq(403, $r['status'], 'wrong password returns 403');
 
 $r = req('auth_login', ['email' => 'admin@test.com', 'password' => 'admin123'], 'POST');
 assert_eq(200, $r['status'], 'correct login succeeds');
+$adminCsrf = $r['body']['csrf_token'];
+
+// ─── RECOVERY KEY ────────────────────────────────────────
+section('Recovery Key');
+
+// Logout and try recovery key login
+$r = req('auth_logout', [], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'logout before recovery test');
+@unlink($cookieFile);
+$cookieFile = tempnam(sys_get_temp_dir(), 'uptime_test_');
+
+// Old key is still valid before first key-based login
+$r = req('auth_login', ['email' => 'admin@test.com', 'password' => $recoveryKey], 'POST');
+assert_eq(200, $r['status'], 'login with original recovery key succeeds');
+assert_true(!empty($r['body']['recovery_key']), 'returns rotated recovery key');
+assert_eq(true, $r['body']['password_reset'] ?? false, 'password reset required after recovery login');
+$rotatedKey = $r['body']['recovery_key'];
+$adminCsrf = $r['body']['csrf_token'];
+
+// Old key is now invalid
+@unlink($cookieFile);
+$cookieFile = tempnam(sys_get_temp_dir(), 'uptime_test_');
+$r = req('auth_login', ['email' => 'admin@test.com', 'password' => $recoveryKey], 'POST');
+assert_eq(403, $r['status'], 'old recovery key is rejected after rotation');
+
+// Login again with rotated key to reset session
+$r = req('auth_login', ['email' => 'admin@test.com', 'password' => $rotatedKey], 'POST');
+assert_eq(200, $r['status'], 'login with rotated recovery key succeeds');
+$adminCsrf = $r['body']['csrf_token'];
+
+// Password change without current password during reset
+$r = req('account_update', ['name' => 'Admin', 'email' => 'admin@test.com', 'password' => 'admin123'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'password change succeeds without current password during reset');
+
+// Normal login still works
+@unlink($cookieFile);
+$cookieFile = tempnam(sys_get_temp_dir(), 'uptime_test_');
+$r = req('auth_login', ['email' => 'admin@test.com', 'password' => 'admin123'], 'POST');
+assert_eq(200, $r['status'], 'normal login works after reset');
+assert_true(empty($r['body']['recovery_key']), 'no recovery key returned on normal login');
+$adminCsrf = $r['body']['csrf_token'];
+
+// Password change without current password (not in reset) is rejected
+$r = req('account_update', ['name' => 'Admin', 'email' => 'admin@test.com', 'password' => 'something'], 'POST', $adminCsrf);
+assert_eq(403, $r['status'], 'password change without current password rejected when not in reset');
+
+// Regenerate recovery key requires password
+$r = req('regenerate_recovery_key', ['password' => 'wrong'], 'POST', $adminCsrf);
+assert_eq(403, $r['status'], 'regenerate recovery key rejects wrong password');
+
+$r = req('regenerate_recovery_key', ['password' => 'admin123'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'regenerate recovery key succeeds');
+assert_true(!empty($r['body']['recovery_key']), 'regenerate returns new recovery key');
+$newKey = $r['body']['recovery_key'];
+
+// New key works for login, old rotated key does not
+@unlink($cookieFile);
+$cookieFile = tempnam(sys_get_temp_dir(), 'uptime_test_');
+$r = req('auth_login', ['email' => 'admin@test.com', 'password' => $newKey], 'POST');
+assert_eq(200, $r['status'], 'newly regenerated key works for login');
 $adminCsrf = $r['body']['csrf_token'];
 
 // ─── GROUPS ──────────────────────────────────────────────

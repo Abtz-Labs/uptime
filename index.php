@@ -58,6 +58,14 @@ function initDatabase(): void {
             $db->exec("DROP TABLE webhooks");
         }
     }
+    // Migration: add recovery_key_hash to users table
+    $userTables = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")->fetch();
+    if ($userTables) {
+        $cols = $db->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('recovery_key_hash', $cols)) {
+            $db->exec("ALTER TABLE users ADD COLUMN recovery_key_hash TEXT");
+        }
+    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -68,6 +76,7 @@ function initDatabase(): void {
             name TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            recovery_key_hash TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS groups (
@@ -127,6 +136,13 @@ function initDatabase(): void {
             attempted_at TEXT DEFAULT (datetime('now'))
         );
     ");
+}
+
+function rotateRecoveryKey(int $userId): string {
+    $key = bin2hex(random_bytes(16));
+    getDb()->prepare("UPDATE users SET recovery_key_hash = ? WHERE id = ?")
+        ->execute([hash('sha256', $key), $userId]);
+    return $key;
 }
 
 // ============================================================================
@@ -484,6 +500,7 @@ if ($action) {
 
         // Account
         'account_update' => apiAccountUpdate(),
+        'regenerate_recovery_key' => apiRegenerateRecoveryKey(),
 
         // Sites
         'list_sites' => apiListSites(),
@@ -602,8 +619,10 @@ function serveStatusPage(): void {
             color: var(--text);
             min-height: 100vh;
             padding: 1rem;
+            display: flex;
+            flex-direction: column;
         }
-        .container { max-width: 800px; margin: 0 auto; }
+        .container { max-width: 800px; margin: 0 auto; flex: 1; width: 100%; display: flex; flex-direction: column; }
         .header {
             text-align: center;
             padding: 2rem 0;
@@ -704,7 +723,10 @@ function serveStatusPage(): void {
             padding: 2rem 0 0;
             color: var(--text-muted);
             font-size: 0.75rem;
+            margin-top: auto;
         }
+        .footer a { color: var(--text); }
+        .footer a:hover { color: var(--primary); }
         .footer p + div { margin-top: 1.5rem; }
         .footer p + p { margin-top: 0.5rem; }
 
@@ -966,9 +988,14 @@ function serveLoginPage(): void {
         }
         .btn:hover { background: var(--primary-hover); }
         .error { color: var(--red); font-size: 0.875rem; margin-top: 0.5rem; text-align: center; display: none; }
+        .footer { text-align: center; padding: 1.5rem 0 0; color: var(--text-muted); font-size: 0.75rem; }
+        .footer a { color: var(--text-muted); }
+        .footer a:hover { color: var(--primary); }
+        .auth-wrapper { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 400px; }
     </style>
 </head>
 <body>
+    <div class="auth-wrapper">
     <div class="login-card">
         <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
@@ -977,15 +1004,20 @@ function serveLoginPage(): void {
         <form id="login-form">
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" required autocomplete="email">
+                <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
             </div>
             <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <label for="password">Password or recovery key</label>
+                <input type="password" id="password" name="password" placeholder="Password or recovery key" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn">Login</button>
             <div class="error" id="error"></div>
         </form>
+    </div>
+    <div class="footer">
+        <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'Saasy</a> Licensed</p>
+        <p>#<?= htmlspecialchars(APP_VERSION) ?> &copy; Abtz Labs.</p>
+    </div>
     </div>
     <script>
         function applyTheme() {
@@ -1000,22 +1032,38 @@ function serveLoginPage(): void {
         }
         applyTheme();
 
+        const savedEmail = localStorage.getItem('uptime_email');
+        const emailEl = document.getElementById('email');
+        const passwordEl = document.getElementById('password');
+        if (savedEmail) {
+            emailEl.value = savedEmail;
+            passwordEl.focus();
+        } else {
+            emailEl.focus();
+        }
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const errorEl = document.getElementById('error');
             errorEl.style.display = 'none';
 
+            const email = document.getElementById('email').value;
             const res = await fetch('/?action=auth_login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    email: document.getElementById('email').value,
+                    email: email,
                     password: document.getElementById('password').value,
                 }),
             });
             const data = await res.json();
 
             if (data.ok) {
+                localStorage.setItem('uptime_email', email);
+                if (data.recovery_key) {
+                    sessionStorage.setItem('rk', data.recovery_key);
+                    sessionStorage.setItem('rk_reset', data.password_reset ? '1' : '0');
+                }
                 window.location.href = '/dash';
             } else {
                 errorEl.textContent = data.error || 'Login failed';
@@ -1118,9 +1166,14 @@ function serveSetupPage(): void {
         }
         .btn:hover { background: var(--primary-hover); }
         .error { color: var(--red); font-size: 0.875rem; margin-top: 0.5rem; text-align: center; display: none; }
+        .footer { text-align: center; padding: 1.5rem 0 0; color: var(--text-muted); font-size: 0.75rem; }
+        .footer a { color: var(--text-muted); }
+        .footer a:hover { color: var(--primary); }
+        .auth-wrapper { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 400px; }
     </style>
 </head>
 <body>
+    <div class="auth-wrapper">
     <div class="setup-card">
         <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
@@ -1143,6 +1196,11 @@ function serveSetupPage(): void {
             <button type="submit" class="btn">Create Account</button>
             <div class="error" id="error"></div>
         </form>
+    </div>
+    <div class="footer">
+        <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'Saasy</a> Licensed</p>
+        <p>#<?= htmlspecialchars(APP_VERSION) ?> &copy; Abtz Labs.</p>
+    </div>
     </div>
     <script>
         function applyTheme() {
@@ -1174,6 +1232,10 @@ function serveSetupPage(): void {
             const data = await res.json();
 
             if (data.ok) {
+                if (data.recovery_key) {
+                    sessionStorage.setItem('rk', data.recovery_key);
+                    sessionStorage.setItem('rk_reset', '0');
+                }
                 window.location.href = '/dash';
             } else {
                 errorEl.textContent = data.error || 'Setup failed';
@@ -1225,6 +1287,8 @@ function serveDashboard(): void {
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
         .topbar {
             display: flex;
@@ -1238,7 +1302,7 @@ function serveDashboard(): void {
         .topbar h1 { font-size: 1.25rem; white-space: nowrap; }
         .topbar-right { display: flex; align-items: center; gap: 0.5rem; }
         .hamburger {
-            display: none;
+            display: flex;
             background: none;
             border: 1px solid var(--border);
             border-radius: var(--radius);
@@ -1252,7 +1316,7 @@ function serveDashboard(): void {
         }
         .hamburger:hover { opacity: 0.8; }
         .nav-links {
-            display: flex;
+            display: none;
             gap: 0.5rem;
             align-items: center;
         }
@@ -1283,7 +1347,7 @@ function serveDashboard(): void {
             transition: color 0.15s;
         }
         .nav-link-btn:hover { color: var(--text); }
-        .user-dropdown { position: relative; }
+        .user-dropdown { position: relative; display: none; }
         .user-trigger {
             display: flex;
             align-items: center;
@@ -1324,6 +1388,13 @@ function serveDashboard(): void {
             font-size: 0.875rem;
         }
         .user-menu button:hover { background: var(--bg); }
+        .user-menu a {
+            display: block;
+            padding: 0.5rem 1rem;
+            color: var(--text);
+            font-size: 0.875rem;
+        }
+        .user-menu a:hover { background: var(--bg); }
         .user-menu hr {
             border: none;
             border-top: 1px solid var(--border);
@@ -1357,7 +1428,7 @@ function serveDashboard(): void {
         }
         .mobile-menu button:hover, .mobile-menu .nav-link-btn:hover { color: var(--text); background: var(--bg); }
         .mobile-menu hr { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
-        .content { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+        .content { padding: 1rem; max-width: 1200px; margin: 0 auto; flex: 1; width: 100%; }
         .section { display: none; }
         .section.active { display: block; }
         .section-header {
@@ -1379,6 +1450,8 @@ function serveDashboard(): void {
             font-size: 0.875rem;
         }
         .btn:hover { background: var(--primary-hover); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn:disabled:hover { background: var(--primary); }
         .btn-danger { background: var(--red); }
         .btn-danger:hover { background: #dc2626; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
@@ -1459,6 +1532,29 @@ function serveDashboard(): void {
             user-select: none;
         }
         .drag-handle:active { cursor: grabbing; }
+        .btn-gray { background: var(--gray); }
+        .btn-gray:hover { background: #475569; }
+        .modal-sm { max-width: 360px; }
+        .modal-md { max-width: 440px; }
+        .rk-content { text-align: center; }
+        .rk-warn { color: var(--red); font-size: 0.75rem; margin-top: 0.75rem; }
+        .rk-pw-field { display: none; margin-top: 1rem; text-align: left; }
+        .rk-check { display: flex; align-items: center; gap: 0.375rem; justify-content: center; margin-top: 1rem; font-size: 0.875rem; cursor: pointer; }
+        .form-actions-center { justify-content: center; border-top: none; padding-top: 0; }
+        .webhook-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+        .webhook-form { margin-top: 0.75rem; padding: 0.75rem; background: var(--bg); border-radius: var(--radius); }
+        .webhook-item { display: flex; justify-content: space-between; align-items: center; padding: 0.375rem 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+        .webhook-item-info { min-width: 0; }
+        .webhook-item-type { font-weight: 500; }
+        .webhook-item-url { color: var(--text-muted); margin-left: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 180px; vertical-align: middle; }
+        .webhook-item-events { color: var(--text-muted); margin-left: 0.5rem; }
+        .webhook-item-actions { display: flex; gap: 0.5rem; }
+        .help-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; }
+        .help-version { color: var(--text-muted); }
+        .site-url-link { color: var(--text-muted); }
+        .confirm-msg { margin-bottom: 1.5rem; color: var(--text-muted); }
+        .rk-copy-btn { margin-left: 0.5rem; padding: 0.25rem 0.5rem; }
+        .webhook-label { font-size: 0.875rem; color: var(--text-muted); }
         .sortable-ghost { opacity: 0.4; }
         .form-actions { display: flex; gap: 0.5rem; justify-content: space-between; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
         .modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 0 -1.5rem 1rem -1.5rem; padding: 0 1.5rem; }
@@ -1490,21 +1586,39 @@ function serveDashboard(): void {
         }
         .toast.error { border-color: var(--red); color: var(--red); }
         .toast.success { border-color: var(--green); color: var(--green); }
-        @media (max-width: 640px) {
-            .nav-links { display: none !important; }
-            .user-dropdown { display: none !important; }
-            .hamburger { display: flex; }
-            table { font-size: 0.875rem; }
-            th, td { padding: 0.375rem; }
-            .hide-mobile { display: none; }
+        .help-content { max-height: 60vh; overflow-y: auto; }
+        .help-section { margin-bottom: 1.5rem; }
+        .help-section h4 { margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--text-muted); }
+        .help-section p { font-size: 0.875rem; line-height: 1.5; }
+        .help-table { font-size: 0.875rem; width: 100%; border-collapse: collapse; }
+        .help-table td { padding: 0.375rem 0.5rem; }
+        .help-table tr:nth-child(odd) { background: var(--bg); }
+        .help-table td:first-child { width: 80px; }
+        .help-table kbd { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 0.125rem 0.375rem; font-size: 0.75rem; font-family: inherit; }
+        .recovery-key-display { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; margin-top: 0.5rem; }
+        .recovery-key-display code { font-family: monospace; font-size: 1rem; letter-spacing: 0.08em; user-select: all; color: var(--text); }
+        .hidden { display: none !important; }
+        .hide-mobile { display: none; }
+        table { font-size: 0.875rem; }
+        th, td { padding: 0.375rem; }
+        @media (min-width: 641px) {
+            .nav-links { display: flex !important; }
+            .user-dropdown { display: block !important; }
+            .hamburger { display: none; }
+            .hide-mobile { display: table-cell; }
         }
         .app-footer {
             max-width: 1200px;
-            margin: 0 auto;
+            margin-left: auto;
+            margin-right: auto;
             padding: 1.5rem 1rem;
             font-size: 0.75rem;
             color: var(--text-muted);
+            margin-top: auto;
+            width: 100%;
         }
+        .app-footer a { color: var(--text); }
+        .app-footer a:hover { color: var(--primary); }
         .app-footer p + p { margin-top: 0.25rem; }
         .app-footer p + div { margin-top: 1.5rem; }
     </style>
@@ -1530,6 +1644,9 @@ function serveDashboard(): void {
                     <button onclick="showSettingsModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button>
                     <hr>
                     <button onclick="toggleTheme()" id="theme-toggle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg><span id="theme-toggle-label">Theme</span></button>
+                    <button onclick="showHelp();closeUserMenu()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M3 11h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H3a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z"/><path d="M21 11h-1a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1z"/><path d="M4 11V8a8 8 0 0 1 16 0v3"/><path d="M18 18a4 4 0 0 1-4 4h-2"/></svg>Help</button>
+                    <a href="https://github.com/Abtz-Labs/uptime/issues" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>Report bug<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="float:right;margin-top:2px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+                    <hr>
                     <button onclick="logout()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>Logout</button>
                 </div>
             </div>
@@ -1570,7 +1687,7 @@ function serveDashboard(): void {
     <div class="app-footer">
       <p>Refresh in <span id="sites-refresh">30</span>s</p>
       <div>
-        <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>.</p>
+        <p>Designed and built by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>.</p>
         <p>&copy; Abtz Labs. • #<?= APP_VERSION ?></p>
       </div>
     </div>
@@ -1579,9 +1696,19 @@ function serveDashboard(): void {
     <div class="modal-overlay" id="account-modal">
         <div class="modal modal-lg">
             <h3>Account</h3>
-            <div id="account-form"><div class="empty">Loading...</div></div>
+            <div class="modal-tabs" id="account-modal-tabs">
+                <button class="active" onclick="switchAccountTab('profile')">Profile</button>
+                <button onclick="switchAccountTab('security')">Security</button>
+            </div>
+            <div class="modal-tab active" id="account-tab-profile">
+                <div id="account-profile-form"><div class="empty">Loading...</div></div>
+            </div>
+            <div class="modal-tab" id="account-tab-security">
+                <div id="account-security-form"><div class="empty">Loading...</div></div>
+            </div>
             <div class="form-actions">
-                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('account-modal')">Close</button>
+                <button type="button" class="btn btn-gray" onclick="closeModal('account-modal')">Cancel</button>
+                <button type="button" class="btn" onclick="saveAccount()" data-modal-save>Save</button>
             </div>
         </div>
     </div>
@@ -1592,8 +1719,8 @@ function serveDashboard(): void {
             <h3>Settings</h3>
             <div id="settings-form"><div class="empty">Loading...</div></div>
             <div class="form-actions">
-                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('settings-modal')">Cancel</button>
-                <button type="button" class="btn" onclick="saveSettings()">Save</button>
+                <button type="button" class="btn btn-gray" onclick="closeModal('settings-modal')">Cancel</button>
+                <button type="button" class="btn" onclick="saveSettings()" data-modal-save>Save</button>
             </div>
         </div>
     </div>
@@ -1603,12 +1730,103 @@ function serveDashboard(): void {
 
     <!-- Confirm Modal -->
     <div class="modal-overlay" id="confirm-modal">
-        <div class="modal" style="max-width:360px">
+        <div class="modal modal-sm">
             <h3 id="confirm-title">Confirm</h3>
-            <p id="confirm-message" style="margin-bottom:1.5rem;color:var(--text-muted)"></p>
+            <p id="confirm-message" class="confirm-msg"></p>
             <div class="form-actions">
-                <button class="btn" style="background:var(--gray)" onclick="closeModal('confirm-modal')">Cancel</button>
+                <button class="btn btn-gray" onclick="closeModal('confirm-modal')">Cancel</button>
                 <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal-overlay" id="help-modal">
+        <div class="modal modal-lg">
+            <h3>Help</h3>
+            <div class="help-content">
+                <div class="help-section">
+                    <h4>Sites</h4>
+                    <p>Add websites to monitor by clicking <strong>+ Add Site</strong>. Each site can be configured with a check interval, expected status code, keyword matching, and notification settings. Sites can be temporarily disabled without deletion.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Groups</h4>
+                    <p>Organize sites into groups (e.g., Production, Staging). Drag the <strong>⠿</strong> handle to reorder groups. Assign sites to groups via the site edit modal.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Status Page</h4>
+                    <p>The public status page (<strong>/</strong>) shows a read-only view of all visible sites. No login required. Auto-refreshes every 30 seconds.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Notifications</h4>
+                    <p><strong>Webhooks</strong> — configure per site (Slack, Telegram, or generic JSON). Test before saving.</p>
+                    <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem"><strong>Generic JSON payload example:</strong></p>
+                    <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">{
+  "event": "down",
+  "site": "My Website",
+  "url": "https://example.com",
+  "message": "Expected HTTP 200, got 503",
+  "timestamp": "2026-08-20T02:00:00+00:00"
+}</pre>
+                </div>
+                <div class="help-section">
+                    <h4>User-Agent</h4>
+                    <p>Uptime identifies itself when checking sites using the User-Agent header: <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">AbtzUptimeCrawler/&lt;version&gt;</code>. You can allowlist this in your firewall or server configuration if needed.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Recovery Key</h4>
+                    <p>On first setup, a recovery key is generated and shown once. Save it securely — it can replace your password if you forget it. After use, the key is rotated and you receive a new one. You must set a new password after logging in with the key.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Keyboard Shortcuts</h4>
+                    <table class="help-table">
+                        <tr><td><kbd>S</kbd></td><td>Sites</td></tr>
+                        <tr><td><kbd>G</kbd></td><td>Groups</td></tr>
+                        <tr><td><kbd>A</kbd></td><td>Account</td></tr>
+                        <tr><td><kbd>⌘</kbd> <kbd>,</kbd></td><td>App Settings</td></tr>
+                        <tr><td><kbd>⌘</kbd> <kbd>S</kbd></td><td>Save (in any form)</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td>Close modal</td></tr>
+                        <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+                    </table>
+                    <p class="help-hint">On Windows/Linux, use <kbd>Ctrl</kbd> instead of <kbd>⌘</kbd>.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Version</h4>
+                    <p class="help-version"><?= htmlspecialchars(APP_VERSION) ?></p>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" onclick="closeModal('help-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recovery Key Modal -->
+    <div class="modal-overlay" id="recovery-modal">
+        <div class="modal modal-md">
+            <h3>Recovery Key</h3>
+            <div class="rk-content">
+                <p style="margin-bottom:1rem;font-size:0.875rem"><strong>Save this recovery key in a secure place.</strong><br>You can use it to log in if you forget your password.</p>
+                <div class="recovery-key-display">
+                    <code id="recovery-key-value"></code>
+                    <button type="button" class="btn btn-sm rk-copy-btn" onclick="copyRecoveryKey()" title="Copy">
+                        <svg id="rk-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <svg id="rk-check-icon" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </button>
+                </div>
+                <p class="rk-warn">This key will not be shown again.</p>
+                <div id="rk-password-field" class="rk-pw-field">
+                    <div class="form-group">
+                        <label for="rk-new-password">Set a new password</label>
+                        <input type="password" id="rk-new-password" placeholder="Min. 6 characters" autocomplete="new-password" oninput="validateRkModal()">
+                    </div>
+                </div>
+                <label class="rk-check">
+                    <input type="checkbox" id="rk-saved-check" onchange="validateRkModal()"> I have saved this key
+                </label>
+            </div>
+            <div class="form-actions form-actions-center">
+                <button type="button" class="btn" id="rk-done-btn" disabled onclick="submitRkPassword()">Done</button>
             </div>
         </div>
     </div>
@@ -1619,7 +1837,7 @@ function serveDashboard(): void {
             <h3 id="site-modal-title">Add Site</h3>
             <div class="modal-tabs" id="site-modal-tabs">
                 <button class="active" onclick="switchSiteTab('site')">Site</button>
-                <button id="site-modal-webhooks-tab" style="display:none" onclick="switchSiteTab('webhooks')">Webhooks</button>
+                <button id="site-modal-webhooks-tab" class="hidden" onclick="switchSiteTab('webhooks')">Webhooks</button>
             </div>
             <div class="modal-tab active" id="site-tab-site">
                 <form id="site-form">
@@ -1683,12 +1901,12 @@ function serveDashboard(): void {
                 </form>
             </div>
             <div class="modal-tab" id="site-tab-webhooks">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
-                    <span style="font-size:0.875rem;color:var(--text-muted)">Manage webhooks for this site</span>
+                <div class="webhook-header">
+                    <span class="webhook-label">Manage webhooks for this site</span>
                     <button type="button" class="btn btn-sm" onclick="toggleWebhookForm()">+ Add</button>
                 </div>
                 <div id="site-webhooks-list"></div>
-                <div id="site-webhook-form" style="display:none;margin-top:0.75rem;padding:0.75rem;background:var(--bg);border-radius:var(--radius)">
+                <div id="site-webhook-form" class="webhook-form hidden">
                     <div class="form-group">
                         <label for="site-webhook-url">URL</label>
                         <input type="url" id="site-webhook-url" required placeholder="https://hooks.slack.com/...">
@@ -1712,15 +1930,15 @@ function serveDashboard(): void {
                             <label for="site-webhook-event-recover">Recover</label>
                         </div>
                     </div>
-                    <div style="display:flex;gap:0.5rem">
+                    <div class="webhook-item-actions">
                         <button type="button" class="btn btn-sm" onclick="saveSiteWebhook()">Save</button>
-                        <button type="button" class="btn btn-sm" style="background:var(--gray)" onclick="toggleWebhookForm()">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-gray" onclick="toggleWebhookForm()">Cancel</button>
                     </div>
                 </div>
             </div>
             <div class="form-actions">
-                <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('site-modal')">Cancel</button>
-                <button type="button" class="btn" id="site-modal-save-btn">Save</button>
+                <button type="button" class="btn btn-gray" onclick="closeModal('site-modal')">Cancel</button>
+                <button type="button" class="btn" id="site-modal-save-btn" data-modal-save>Save</button>
             </div>
         </div>
     </div>
@@ -1740,8 +1958,8 @@ function serveDashboard(): void {
                     <input type="number" id="group-position" value="0" min="0">
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn" style="background:var(--gray)" onclick="closeModal('group-modal')">Cancel</button>
-                    <button type="submit" class="btn">Save</button>
+                    <button type="button" class="btn btn-gray" onclick="closeModal('group-modal')">Cancel</button>
+                    <button type="submit" class="btn" data-modal-save>Save</button>
                 </div>
             </form>
         </div>
@@ -1783,13 +2001,71 @@ function serveDashboard(): void {
         function showSection(id) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.getElementById(id).classList.add('active');
-            document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
+            document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => {
+                b.classList.remove('active');
+                if (b.textContent.trim().toLowerCase() === id) b.classList.add('active');
+            });
             closeUserMenu();
             closeMobileMenu();
             history.replaceState(null, '', '#' + id);
             if (id === 'sites') loadSites();
             if (id === 'groups') loadGroups();
+        }
+
+        function showHelp() {
+            document.getElementById('help-modal').classList.add('active');
+        }
+
+        let _rkPasswordReset = false;
+
+        function showRecoveryKeyModal(key, passwordReset) {
+            _rkPasswordReset = passwordReset;
+            const formatted = key.replace(/(.{4})/g, '$1-').slice(0, -1).toUpperCase();
+            document.getElementById('recovery-key-value').textContent = formatted;
+            document.getElementById('rk-saved-check').checked = false;
+            document.getElementById('rk-done-btn').disabled = true;
+            const pwField = document.getElementById('rk-password-field');
+            if (passwordReset) {
+                pwField.style.display = '';
+                document.getElementById('rk-new-password').value = '';
+            } else {
+                pwField.style.display = 'none';
+            }
+            document.getElementById('recovery-modal').classList.add('active');
+        }
+
+        function copyRecoveryKey() {
+            const text = document.getElementById('recovery-key-value').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                document.getElementById('rk-copy-icon').classList.add('hidden');
+                document.getElementById('rk-check-icon').classList.remove('hidden');
+                setTimeout(() => {
+                    document.getElementById('rk-check-icon').classList.add('hidden');
+                    document.getElementById('rk-copy-icon').classList.remove('hidden');
+                }, 2000);
+            });
+        }
+
+        function validateRkModal() {
+            const checked = document.getElementById('rk-saved-check').checked;
+            if (_rkPasswordReset) {
+                const pw = document.getElementById('rk-new-password').value;
+                document.getElementById('rk-done-btn').disabled = !(checked && pw && pw.length >= 6);
+            } else {
+                document.getElementById('rk-done-btn').disabled = !checked;
+            }
+        }
+
+        async function submitRkPassword() {
+            if (_rkPasswordReset) {
+                const pw = document.getElementById('rk-new-password').value;
+                if (!pw || pw.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+                const status = await api('auth_status');
+                const res = await api('account_update', { name: status.user.name, email: status.user.email, password: pw }, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                showToast('Password updated');
+            }
+            closeModal('recovery-modal');
         }
 
         function showAccountModal() {
@@ -1898,11 +2174,11 @@ function serveDashboard(): void {
             document.getElementById('site-notify').checked = site ? !!site.notify : true;
             const whTab = document.getElementById('site-modal-webhooks-tab');
             if (site && site.id) {
-                whTab.style.display = '';
-                document.getElementById('site-webhook-form').style.display = 'none';
+                whTab.classList.remove('hidden');
+                document.getElementById('site-webhook-form').classList.add('hidden');
                 loadSiteWebhooks(site.id);
             } else {
-                whTab.style.display = 'none';
+                whTab.classList.add('hidden');
             }
             switchSiteTab('site');
             document.getElementById('site-modal').classList.add('active');
@@ -1939,36 +2215,44 @@ function serveDashboard(): void {
             };
             if (id) data.id = id;
             const res = await api(id ? 'update_site' : 'create_site', data, 'POST');
-            if (!id && res.id) {
-                document.getElementById('site-id').value = res.id;
-                document.getElementById('site-modal-title').textContent = 'Edit Site';
-                document.getElementById('site-modal-webhooks-tab').style.display = '';
-                document.getElementById('site-webhooks-list').innerHTML = '<div class="empty" style="font-size:0.875rem">No webhooks yet.</div>';
-                loadSites();
-            } else {
-                closeModal('site-modal');
-                loadSites();
-            }
+            if (res.error) { showToast(res.error, 'error'); return; }
+            showToast(id ? 'Site updated' : 'Site created');
+            closeModal('site-modal');
+            loadSites();
         });
 
         document.getElementById('site-modal-save-btn').addEventListener('click', () => {
             if (document.getElementById('site-tab-site').classList.contains('active')) {
                 document.getElementById('site-form').requestSubmit();
+            } else {
+                closeModal('site-modal');
             }
         });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 const active = document.querySelector('.modal-overlay.active');
-                if (active) { closeModal(active.id); e.preventDefault(); }
+                if (active && active.id !== 'recovery-modal') { closeModal(active.id); e.preventDefault(); }
             }
             if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-                const siteModal = document.getElementById('site-modal');
-                if (siteModal.classList.contains('active')) {
+                const active = document.querySelector('.modal-overlay.active');
+                if (active) {
                     e.preventDefault();
-                    document.getElementById('site-modal-save-btn').click();
+                    const saveBtn = active.querySelector('[data-modal-save]');
+                    if (saveBtn) saveBtn.click();
                 }
             }
+
+            const tag = document.activeElement?.tagName;
+            const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+            const modalOpen = document.querySelector('.modal-overlay.active');
+            if (isInput || modalOpen) return;
+
+            if (e.key === 's' || e.key === 'S') { showSection('sites'); return; }
+            if (e.key === 'g' || e.key === 'G') { showSection('groups'); return; }
+            if (e.key === 'a' || e.key === 'A') { showAccountModal(); return; }
+            if (e.key === '?') { showHelp(); return; }
+            if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); showSettingsModal(); }
         });
 
         // ─── SITE WEBHOOKS (embedded in site modal) ──────
@@ -1981,13 +2265,13 @@ function serveDashboard(): void {
             }
             let html = '';
             for (const h of webhooks) {
-                html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.375rem 0;border-bottom:1px solid var(--border);font-size:0.875rem">
-                    <div style="min-width:0">
-                        <span style="font-weight:500">${escapeHtml(h.type)}</span>
-                        <span style="color:var(--text-muted);margin-left:0.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;max-width:180px;vertical-align:middle">${escapeHtml(h.url)}</span>
-                        <span style="color:var(--text-muted);margin-left:0.5rem">${escapeHtml(h.events)}</span>
+                html += `<div class="webhook-item">
+                    <div class="webhook-item-info">
+                        <span class="webhook-item-type">${escapeHtml(h.type)}</span>
+                        <span class="webhook-item-url">${escapeHtml(h.url)}</span>
+                        <span class="webhook-item-events">${escapeHtml(h.events)}</span>
                     </div>
-                    <div style="display:flex;gap:0.25rem;flex-shrink:0">
+                    <div class="webhook-item-actions">
                         <button type="button" class="btn btn-sm" onclick="testSiteWebhook(${h.id}, this)" title="Test">Test</button>
                         <button type="button" class="btn btn-sm btn-danger" onclick="deleteSiteWebhook(${h.id})">Delete</button>
                     </div>
@@ -1998,8 +2282,8 @@ function serveDashboard(): void {
 
         function toggleWebhookForm() {
             const form = document.getElementById('site-webhook-form');
-            const isOpen = form.style.display !== 'none';
-            form.style.display = isOpen ? 'none' : '';
+            const isOpen = !form.classList.contains('hidden');
+            form.classList.toggle('hidden');
             if (!isOpen) {
                 document.getElementById('site-webhook-url').value = '';
                 document.getElementById('site-webhook-type').value = 'generic';
@@ -2114,18 +2398,26 @@ function serveDashboard(): void {
                 position: parseInt(document.getElementById('group-position').value) || 0,
             };
             if (id) data.id = id;
-            await api(id ? 'update_group' : 'create_group', data, 'POST');
+            const res = await api(id ? 'update_group' : 'create_group', data, 'POST');
+            if (res.error) { showToast(res.error, 'error'); return; }
+            showToast(id ? 'Group updated' : 'Group created');
             closeModal('group-modal');
             loadGroups();
         });
 
         // ─── ACCOUNT ─────────────────────────────────────
+        function switchAccountTab(tab) {
+            document.querySelectorAll('#account-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#account-modal .modal-tab').forEach(t => t.classList.remove('active'));
+            const btn = document.querySelector(`#account-modal .modal-tabs button[onclick*="${tab}"]`);
+            if (btn) btn.classList.add('active');
+            document.getElementById(`account-tab-${tab}`).classList.add('active');
+        }
+
         async function loadAccount() {
             const status = await api('auth_status');
             const user = status.user;
-            const container = document.getElementById('account-form');
-            container.innerHTML = `
-                <h4 style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-muted)">Profile</h4>
+            document.getElementById('account-profile-form').innerHTML = `
                 <div class="form-group">
                     <label for="account-name">Name</label>
                     <input type="text" id="account-name" value="${escapeHtml(user.name)}">
@@ -2134,9 +2426,8 @@ function serveDashboard(): void {
                     <label for="account-email">Email</label>
                     <input type="email" id="account-email" value="${escapeHtml(user.email)}">
                 </div>
-                <button class="btn btn-sm" onclick="saveAccount()">Save Profile</button>
-                <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--border)">
-                <h4 style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-muted)">Change Password</h4>
+            `;
+            document.getElementById('account-security-form').innerHTML = `
                 <div class="form-group">
                     <label for="account-current-password">Current Password</label>
                     <input type="password" id="account-current-password">
@@ -2149,33 +2440,54 @@ function serveDashboard(): void {
                     <label for="account-confirm-password">Confirm New Password</label>
                     <input type="password" id="account-confirm-password" minlength="6">
                 </div>
-                <button class="btn btn-sm" onclick="changePassword()">Change Password</button>
+                <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--border)">
+                <h4 style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-muted)">Recovery Key</h4>
+                <p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:0.75rem">Generate a new recovery key. The old key will stop working immediately.</p>
+                <div style="display:flex;gap:0.5rem;align-items:flex-end">
+                    <div class="form-group" style="flex:1;margin-bottom:0">
+                        <label for="account-rk-password">Current Password</label>
+                        <input type="password" id="account-rk-password">
+                    </div>
+                    <button type="button" class="btn btn-sm" onclick="regenerateRecoveryKey()" style="height:38px;white-space:nowrap">Rotate Key</button>
+                </div>
             `;
+            switchAccountTab('profile');
             focusFirstInput('account-modal');
         }
 
-        async function saveAccount() {
-            const name = document.getElementById('account-name').value;
-            const email = document.getElementById('account-email').value;
-            if (!name || !email) { showToast('Name and email are required', 'error'); return; }
-            const res = await api('account_update', { name, email }, 'POST');
+        async function regenerateRecoveryKey() {
+            const password = document.getElementById('account-rk-password').value;
+            if (!password) { showToast('Password is required', 'error'); return; }
+            const res = await api('regenerate_recovery_key', { password }, 'POST');
             if (res.error) { showToast(res.error, 'error'); return; }
-            showToast('Profile updated');
+            document.getElementById('account-rk-password').value = '';
+            showRecoveryKeyModal(res.recovery_key, false);
         }
 
-        async function changePassword() {
+        async function saveAccount() {
+            const status = await api('auth_status');
+            const user = status.user;
+            const nameEl = document.getElementById('account-name');
+            const emailEl = document.getElementById('account-email');
+            const name = nameEl ? nameEl.value : user.name;
+            const email = emailEl ? emailEl.value : user.email;
+            if (!name || !email) { showToast('Name and email are required', 'error'); return; }
             const current = document.getElementById('account-current-password').value;
             const newPw = document.getElementById('account-new-password').value;
             const confirmPw = document.getElementById('account-confirm-password').value;
-            if (!current || !newPw) { showToast('All fields are required', 'error'); return; }
-            if (newPw !== confirmPw) { showToast('Passwords do not match', 'error'); return; }
-            if (newPw.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
-            const res = await api('account_update', { password: newPw, current_password: current }, 'POST');
-            if (res.error) { showToast(res.error, 'error'); return; }
-            showToast('Password changed');
-            document.getElementById('account-current-password').value = '';
-            document.getElementById('account-new-password').value = '';
-            document.getElementById('account-confirm-password').value = '';
+            if (current || newPw || confirmPw) {
+                if (!current || !newPw) { showToast('All password fields are required', 'error'); return; }
+                if (newPw !== confirmPw) { showToast('Passwords do not match', 'error'); return; }
+                if (newPw.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
+                const res = await api('account_update', { name, email, password: newPw, current_password: current }, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                showToast('Password updated');
+            } else {
+                const res = await api('account_update', { name, email }, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                showToast('Account updated');
+            }
+            closeModal('account-modal');
         }
 
         // ─── SETTINGS ────────────────────────────────────
@@ -2196,10 +2508,11 @@ function serveDashboard(): void {
         }
 
         async function saveSettings() {
-            await api('update_settings', {
+            const res = await api('update_settings', {
                 app_name: document.getElementById('settings-app-name').value,
                 retention_days: parseInt(document.getElementById('settings-retention').value),
             }, 'POST');
+            if (res.error) { showToast(res.error, 'error'); return; }
             showToast('Settings saved');
             closeModal('settings-modal');
         }
@@ -2232,7 +2545,7 @@ function serveDashboard(): void {
                     resolve(true);
                 };
                 okBtn.addEventListener('click', handler);
-                document.querySelector('#confirm-modal .btn[style]').onclick = () => {
+                document.querySelector('#confirm-modal .btn-gray').onclick = () => {
                     closeModal('confirm-modal');
                     resolve(false);
                 };
@@ -2253,6 +2566,15 @@ function serveDashboard(): void {
             else if (initialSection === 'groups') loadGroups();
         } else {
             loadSites();
+        }
+
+        // Show recovery key modal if present in sessionStorage
+        const rk = sessionStorage.getItem('rk');
+        if (rk) {
+            const rkReset = sessionStorage.getItem('rk_reset') === '1';
+            sessionStorage.removeItem('rk');
+            sessionStorage.removeItem('rk_reset');
+            showRecoveryKeyModal(rk, rkReset);
         }
 
         function startRefreshTimer(elId, interval, cb) {
@@ -2310,11 +2632,13 @@ function apiAuthSetup(): void {
     $stmt->execute([$name, $email, $hash]);
     $userId = (int) $db->lastInsertId();
 
+    $recoveryKey = rotateRecoveryKey($userId);
+
     session_regenerate_id(true);
     $_SESSION['user_id'] = $userId;
     $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
 
-    jsonResponse(['ok' => true, 'csrf_token' => $_SESSION['csrf_token']]);
+    jsonResponse(['ok' => true, 'csrf_token' => $_SESSION['csrf_token'], 'recovery_key' => $recoveryKey]);
 }
 
 function apiAuthLogin(): void {
@@ -2333,20 +2657,41 @@ function apiAuthLogin(): void {
     checkRateLimit();
 
     $db = getDb();
-    $stmt = $db->prepare("SELECT id, password_hash FROM users WHERE email = ?");
+    $stmt = $db->prepare("SELECT id, password_hash, recovery_key_hash FROM users WHERE email = ?");
     $stmt->execute([$email]);
     $user = $stmt->fetch();
 
-    if (!$user || !password_verify($password, $user['password_hash'])) {
+    if (!$user) {
         recordFailedAttempt();
         jsonResponse(['error' => 'Invalid email or password'], 403);
+    }
+
+    $response = ['ok' => true];
+    $passwordResetRequired = false;
+
+    if (!password_verify($password, $user['password_hash'])) {
+        $candidateHash = hash('sha256', str_replace('-', '', strtolower(trim($password))));
+        if ($user['recovery_key_hash'] && hash_equals($user['recovery_key_hash'], $candidateHash)) {
+            $response['recovery_key'] = rotateRecoveryKey($user['id']);
+            $passwordResetRequired = true;
+        } else {
+            recordFailedAttempt();
+            jsonResponse(['error' => 'Invalid email or password'], 403);
+        }
+    } elseif (!$user['recovery_key_hash']) {
+        $response['recovery_key'] = rotateRecoveryKey($user['id']);
     }
 
     clearAttempts();
     session_regenerate_id(true);
     $_SESSION['user_id'] = (int) $user['id'];
     $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
-    jsonResponse(['ok' => true, 'csrf_token' => $_SESSION['csrf_token']]);
+    if ($passwordResetRequired) {
+        $_SESSION['password_reset_required'] = true;
+        $response['password_reset'] = true;
+    }
+    $response['csrf_token'] = $_SESSION['csrf_token'];
+    jsonResponse($response);
 }
 
 function apiAuthLogout(): void {
@@ -2387,19 +2732,46 @@ function apiAccountUpdate(): void {
         if (strlen($password) < 6) {
             jsonResponse(['error' => 'New password must be at least 6 characters'], 400);
         }
-        $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
-        $stmt->execute([$user['id']]);
-        $row = $stmt->fetch();
-        if (!password_verify($currentPassword, $row['password_hash'])) {
-            jsonResponse(['error' => 'Current password is incorrect'], 403);
+        if (!$currentPassword && !empty($_SESSION['password_reset_required'])) {
+            // Recovery-key login: allow password change without current password
+        } else {
+            $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $stmt->execute([$user['id']]);
+            $row = $stmt->fetch();
+            if (!password_verify($currentPassword, $row['password_hash'])) {
+                jsonResponse(['error' => 'Current password is incorrect'], 403);
+            }
         }
         $hash = password_hash($password, PASSWORD_BCRYPT);
         $db->prepare("UPDATE users SET name = ?, email = ?, password_hash = ? WHERE id = ?")->execute([$name, $email, $hash, $user['id']]);
+        unset($_SESSION['password_reset_required']);
     } else {
         $db->prepare("UPDATE users SET name = ?, email = ? WHERE id = ?")->execute([$name, $email, $user['id']]);
     }
 
     jsonResponse(['ok' => true]);
+}
+
+function apiRegenerateRecoveryKey(): void {
+    requireAuth();
+    $user = getCurrentUser();
+    $input = getInput();
+    $password = $input['password'] ?? '';
+
+    if (!$password) {
+        jsonResponse(['error' => 'Password is required'], 400);
+    }
+
+    $db = getDb();
+    $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+    $stmt->execute([$user['id']]);
+    $row = $stmt->fetch();
+
+    if (!password_verify($password, $row['password_hash'])) {
+        jsonResponse(['error' => 'Invalid password'], 403);
+    }
+
+    jsonResponse(['ok' => true, 'recovery_key' => rotateRecoveryKey($user['id'])]);
 }
 
 // ============================================================================

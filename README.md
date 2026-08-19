@@ -16,9 +16,9 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 - Status page with timeline bars (green/grey/red) per site
 - Drag-and-drop group reordering
 - Webhook notifications (Slack, Telegram, generic JSON)
-- Email notifications via SMTP (immediate or daily digest)
 - Public status page (no login required)
 - Dark/light theme toggle
+- Recovery key for password recovery
 - Automatic data retention cleanup
 - Custom User-Agent for crawler identification (`AbtzUptimeCrawler/<version>`)
 
@@ -108,7 +108,7 @@ Click "+ Add Site" to add a site to monitor. Each site has:
 - **Timeout** — maximum seconds to wait for a response
 - **Interval** — how often to check (in seconds)
 - **Group** — assign to a group for organization
-- **Notifications** — enable/disable webhook and email alerts per site
+- **Notifications** — enable/disable webhook alerts per site
 
 Sites can be temporarily disabled without deleting them. Disabled sites are skipped during checks.
 
@@ -137,9 +137,31 @@ Only sites with "visible" enabled appear on the status page.
 
 **Webhooks** are configured per site (site edit modal, Webhooks tab). Supported types: Slack (Incoming Webhook), Telegram (Bot API), and generic JSON POST. You can test webhooks before saving.
 
-**Email notifications** require SMTP configuration (App Settings). Choose between immediate delivery or a daily digest summary.
+Webhook notifications include a 5-minute spam cooldown per site to avoid alert floods.
 
-Both webhook and email notifications include a 5-minute spam cooldown per site to avoid alert floods.
+**Generic JSON payload example:**
+
+```json
+{
+  "event": "down",
+  "site": "My Website",
+  "url": "https://example.com",
+  "message": "Expected HTTP 200, got 503",
+  "timestamp": "2026-08-20T02:00:00+00:00"
+}
+```
+
+**Slack/Telegram payload:** A formatted text message with an emoji indicator (🔴 for down, 🟢 for recover).
+
+### User-Agent
+
+Uptime identifies itself when checking sites using the User-Agent header: `AbtzUptimeCrawler/<version>`. You can allowlist this in your firewall or server configuration if needed.
+
+### Recovery Key
+
+On first setup, a recovery key is generated and shown once. Save it securely — it can replace your password if you forget it. The key is displayed only once and cannot be retrieved later.
+
+To use the recovery key, enter it in the password field on the login page. After logging in with the key, you'll be prompted to set a new password. The old key is rotated and a new one is generated automatically.
 
 ### Retention
 
@@ -149,9 +171,15 @@ Check history is retained for 180 days by default (configurable in App Settings)
 
 | Shortcut | Action |
 |----------|--------|
-| `⌘S` | Save (in any form) |
+| `S` | Sites |
+| `G` | Groups |
+| `A` | Account |
+| `⌘ ,` | App Settings |
+| `⌘ S` | Save (in any form) |
 | `Esc` | Close modal |
-| `Enter` | Confirm modal (when not focused on an input) |
+| `?` | Show help |
+
+On Windows/Linux, use `Ctrl` instead of `⌘`.
 
 ## Deployment
 
@@ -243,4 +271,4 @@ Open an issue with steps to reproduce. Include your PHP version, browser, and an
 
 In short: use it, modify it, self-host it, distribute it. Just don't offer it as a competing hosted service where the software itself is the primary value.
 
-Designed, built, and backed by [Rogerio Taques](https://x.com/rogeriotaques), the guy behind [Abtz Labs](https://abtz.co).
+Designed and built by [Rogerio Taques](https://x.com/rogeriotaques), the guy behind [Abtz Labs](https://abtz.co).
