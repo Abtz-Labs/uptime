@@ -393,6 +393,7 @@ function checkSite(array $site): array {
         CURLOPT_MAXREDIRS => 5,
         CURLOPT_NOBODY => $site['method'] === 'HEAD',
         CURLOPT_CUSTOMREQUEST => $site['method'],
+        CURLOPT_USERAGENT => 'AbtzUptimeCrawler/' . APP_VERSION,
     ]);
 
     $start = microtime(true);
@@ -688,6 +689,7 @@ function serveStatusPage(): void {
         .timeline-bar.up { background: var(--green); }
         .timeline-bar.degraded { background: #f59e0b; }
         .timeline-bar.down { background: var(--red); }
+        .timeline-bar.unknown { background: var(--border); }
         .timeline-labels {
             display: flex;
             justify-content: space-between;
@@ -703,6 +705,15 @@ function serveStatusPage(): void {
             color: var(--text-muted);
             font-size: 0.75rem;
         }
+        .app-footer {
+            text-align: center;
+            padding: 1.5rem 0 0.5rem;
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+        }
+        .app-footer a { color: var(--text-muted); }
+        .app-footer a:hover { color: var(--primary); }
+        .app-footer p + p { margin-top: 0.125rem; }
         @media (min-width: 768px) {
             body { padding: 2rem; }
             .header h1 { font-size: 2rem; }
@@ -722,7 +733,12 @@ function serveStatusPage(): void {
             <div class="empty">Loading...</div>
         </div>
         <div class="footer">
-            Last updated: <span id="last-updated">—</span> · Refresh in <span id="countdown">30</span>s
+            Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">30</span>s
+        </div>
+        <div class="app-footer">
+            <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; Open Source</p>
+            <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>.</p>
+            <p>#<?= APP_VERSION ?> &copy; Abtz Labs.</p>
         </div>
     </div>
     <script>
@@ -782,12 +798,21 @@ function serveStatusPage(): void {
             const time = site.last_check ? timeAgo(site.last_check) : 'Never';
             const uptime = site.uptime_24h;
 
-            // Timeline bars — one per check
+            // Timeline bars — fixed 50 slots, checks fill from the right (now)
             let timelineHtml = '';
             const timeline = site.timeline || [];
+            const SLOTS = 50;
             if (timeline.length > 0) {
                 const reversed = [...timeline].reverse();
-                const bars = reversed.map(b => `<div class="timeline-bar ${b.status}" title="${b.status} — ${b.checked_at}"></div>`).join('');
+                const toMs = (d) => new Date(d + 'Z').getTime();
+                const slots = new Array(SLOTS).fill('unknown');
+                for (let i = 0; i < reversed.length; i++) {
+                    slots[SLOTS - 1 - i] = reversed[reversed.length - 1 - i].status;
+                }
+                const bars = slots.map(s => {
+                    const tip = s === 'unknown' ? 'no data' : s;
+                    return `<div class="timeline-bar ${s}" title="${tip}"></div>`;
+                }).join('');
                 timelineHtml = `
                     <div class="timeline">${bars}</div>
                     <div class="timeline-labels"><span>${timeAgo(reversed[0].checked_at)}</span><span>now</span></div>
@@ -811,7 +836,7 @@ function serveStatusPage(): void {
         }
 
         function timeAgo(dateStr) {
-            const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+            const diff = (Date.now() - new Date(dateStr + 'Z').getTime()) / 1000;
             if (diff < 60) return 'Just now';
             if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
             if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
@@ -1538,6 +1563,9 @@ function serveDashboard(): void {
         </div>
 
     </div>
+    <div class="app-footer">
+        <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>. · #<?= APP_VERSION ?> &copy; Abtz Labs. · Refresh in <span id="sites-refresh">30</span>s</p>
+    </div>
 
     <!-- Account Modal -->
     <div class="modal-overlay" id="account-modal">
@@ -2218,6 +2246,17 @@ function serveDashboard(): void {
         } else {
             loadSites();
         }
+
+        let refreshCountdown = 30;
+        setInterval(() => {
+            refreshCountdown--;
+            const el = document.getElementById('sites-refresh');
+            if (el) el.textContent = refreshCountdown > 0 ? `refresh in ${refreshCountdown}s` : '';
+            if (refreshCountdown <= 0) {
+                loadSites();
+                refreshCountdown = 30;
+            }
+        }, 1000);
     </script>
 </body>
 </html>
