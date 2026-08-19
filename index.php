@@ -728,10 +728,10 @@ function serveStatusPage(): void {
         </div>
         <div class="footer">
             <p>
-              Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">...</span>s
+              Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">30</span>s
            </p>
            <div>
-              <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; O'Saasy Licensed</p>
+              <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'Saasy</a> Licensed</p>
               <p>#<?= APP_VERSION ?> &copy; Abtz Labs.</p>
           </div>
        </div>
@@ -859,15 +859,16 @@ function serveStatusPage(): void {
         applyTheme();
         loadStatus();
 
-        let countdown = 30;
-        setInterval(() => {
-            countdown--;
-            document.getElementById('countdown').textContent = countdown;
-            if (countdown <= 0) {
-                loadStatus();
-                countdown = 30;
-            }
-        }, 1000);
+        function startRefreshTimer(elId, interval, cb) {
+            let countdown = interval;
+            setInterval(() => {
+                countdown--;
+                const el = document.getElementById(elId);
+                if (el) el.textContent = countdown;
+                if (countdown <= 0) { cb(); countdown = interval; }
+            }, 1000);
+        }
+        startRefreshTimer('countdown', 30, loadStatus);
     </script>
 </body>
 </html>
@@ -1499,14 +1500,14 @@ function serveDashboard(): void {
             .hide-mobile { display: none; }
         }
         .app-footer {
-            text-align: center;
-            padding: 1.5rem 0 0;
-            font-size: 0.6875rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem;
+            font-size: 0.75rem;
             color: var(--text-muted);
         }
-        .app-footer a { color: var(--text-muted); }
-        .app-footer a:hover { color: var(--primary); }
         .app-footer p + p { margin-top: 0.25rem; }
+        .app-footer p + div { margin-top: 1.5rem; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
@@ -1568,7 +1569,11 @@ function serveDashboard(): void {
 
     </div>
     <div class="app-footer">
-        <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>. · #<?= APP_VERSION ?> &copy; Abtz Labs. · Refresh in <span id="sites-refresh">30</span>s</p>
+      <p>Refresh in <span id="sites-refresh">30</span>s</p>
+      <div>
+        <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>.</p>
+        <p>&copy; Abtz Labs. • #<?= APP_VERSION ?></p>
+      </div>
     </div>
 
     <!-- Account Modal -->
@@ -2251,16 +2256,16 @@ function serveDashboard(): void {
             loadSites();
         }
 
-        let refreshCountdown = 30;
-        setInterval(() => {
-            refreshCountdown--;
-            const el = document.getElementById('sites-refresh');
-            if (el) el.textContent = refreshCountdown > 0 ? `refresh in ${refreshCountdown}s` : '';
-            if (refreshCountdown <= 0) {
-                loadSites();
-                refreshCountdown = 30;
-            }
-        }, 1000);
+        function startRefreshTimer(elId, interval, cb) {
+            let countdown = interval;
+            setInterval(() => {
+                countdown--;
+                const el = document.getElementById(elId);
+                if (el) el.textContent = countdown;
+                if (countdown <= 0) { cb(); countdown = interval; }
+            }, 1000);
+        }
+        startRefreshTimer('sites-refresh', 30, loadSites);
     </script>
 </body>
 </html>
