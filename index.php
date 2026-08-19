@@ -2864,6 +2864,8 @@ function apiDeleteSite(): void {
 function apiRunChecks(): void {
     // No CSRF check needed for cron endpoint
     $result = runChecks();
+    $cleanup = cleanupChecks();
+    $result['cleaned'] = $cleanup['deleted'];
     jsonResponse($result);
 }
 
