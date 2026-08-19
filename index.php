@@ -701,19 +701,13 @@ function serveStatusPage(): void {
         .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
         .footer {
             text-align: center;
-            padding: 2rem 0;
+            padding: 2rem 0 0;
             color: var(--text-muted);
             font-size: 0.75rem;
         }
-        .app-footer {
-            text-align: center;
-            padding: 1.5rem 0 0.5rem;
-            font-size: 0.6875rem;
-            color: var(--text-muted);
-        }
-        .app-footer a { color: var(--text-muted); }
-        .app-footer a:hover { color: var(--primary); }
-        .app-footer p + p { margin-top: 0.125rem; }
+        .footer p + div { margin-top: 1.5rem; }
+        .footer p + p { margin-top: 0.5rem; }
+
         @media (min-width: 768px) {
             body { padding: 2rem; }
             .header h1 { font-size: 2rem; }
@@ -733,13 +727,14 @@ function serveStatusPage(): void {
             <div class="empty">Loading...</div>
         </div>
         <div class="footer">
-            Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">30</span>s
-        </div>
-        <div class="app-footer">
-            <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; Open Source</p>
-            <p>Designed, built, and backed by <a href="https://x.com/rogeriotaques" target="_blank" rel="noopener noreferrer">Rogerio Taques</a>, the guy behind <a href="https://abtz.co?ref=Uptime&utm_source=Uptime&utm_media=Instance" target="_blank" rel="noopener noreferrer">Abtz Labs</a>.</p>
-            <p>#<?= APP_VERSION ?> &copy; Abtz Labs.</p>
-        </div>
+            <p>
+              Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">...</span>s
+           </p>
+           <div>
+              <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; O'Saasy Licensed</p>
+              <p>#<?= APP_VERSION ?> &copy; Abtz Labs.</p>
+          </div>
+       </div>
     </div>
     <script>
         async function loadStatus() {
@@ -1503,6 +1498,15 @@ function serveDashboard(): void {
             th, td { padding: 0.375rem; }
             .hide-mobile { display: none; }
         }
+        .app-footer {
+            text-align: center;
+            padding: 1.5rem 0 0;
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+        }
+        .app-footer a { color: var(--text-muted); }
+        .app-footer a:hover { color: var(--primary); }
+        .app-footer p + p { margin-top: 0.25rem; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 </head>
