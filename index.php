@@ -777,7 +777,6 @@ function serveStatusPage(): void {
             const ungrouped = sites.filter(s => !s.group_id);
             if (ungrouped.length > 0) {
                 html += `<div class="group">`;
-                html += `<div class="group-header">Ungrouped</div>`;
                 for (const site of ungrouped) {
                     html += renderSite(site);
                 }
