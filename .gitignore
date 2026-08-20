@@ -6,5 +6,8 @@
 # Server PID file
 .server.pid
 
+# Backup files
+index.php.bak
+
 # Misc
 docs/plans/*.md

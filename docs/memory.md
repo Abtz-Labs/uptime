@@ -23,4 +23,6 @@ Session checkpoints for continuity across sessions.
 - DB migration: refactored `initDatabase()` + new `migrateDatabase()` using `PRAGMA user_version` (v3), legacy DB detection, versioned blocks for webhooks site_id and users recovery_key_hash
 - Help modal: added "Scheduled Checks" section with cron endpoint explanation, production curl line, dev `just cron` recipes
 - README.md: expanded "Simulated Cron" → "Scheduled Checks" with Development/Production subsections, `crontab -e` setup, `-sf` curl flags, `UPTIME_DB_FILE` env note
+- Auto-update feature: added `check_update` and `apply_update` API actions (Tasssks strategy), `GITHUB_RAW_URL` constant, `setSetting()` helper, `apiAuthStatus()` returns `version` + `update_available`
+- Auto-update UI: topbar amber badge (hidden by default), Settings modal "Updates" section with Check/Apply buttons, `APP_STATUS` global fetched on page load
 - Test count: 100 (all passing)

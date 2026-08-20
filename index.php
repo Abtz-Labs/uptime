@@ -30,6 +30,7 @@ define('APP_NAME', 'Uptime');
 define('APP_VERSION', '0.1.0');
 define('DB_FILE', getenv('UPTIME_DB_FILE') ?: __DIR__ . '/uptime.sqlite');
 define('DEFAULT_RETENTION_DAYS', 180);
+define('GITHUB_RAW_URL', 'https://raw.githubusercontent.com/Abtz-Labs/uptime/main/index.php');
 
 // ============================================================================
 // DATABASE SETUP
@@ -220,6 +221,11 @@ function getInput(): array {
 
 function generateToken(int $length = 32): string {
     return bin2hex(random_bytes($length / 2));
+}
+
+function setSetting(string $key, string $value): void {
+    getDb()->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+        ->execute([$key, $value]);
 }
 
 function hasUsers(): bool {
@@ -548,6 +554,10 @@ if ($action) {
         // Settings
         'get_settings' => apiGetSettings(),
         'update_settings' => apiUpdateSettings(),
+
+        // Updates
+        'check_update' => apiCheckUpdate(),
+        'apply_update' => apiApplyUpdate(),
 
         // Cleanup
         'cleanup_checks' => apiCleanupChecks(),
@@ -1497,6 +1507,25 @@ function serveDashboard(): void {
         .status-badge.up { background: rgba(34, 197, 94, 0.15); color: var(--green); }
         .status-badge.down { background: rgba(239, 68, 68, 0.15); color: var(--red); }
         .status-badge.unknown { background: rgba(100, 116, 139, 0.15); color: var(--gray); }
+        .update-badge {
+            display: none;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+            cursor: pointer;
+            white-space: nowrap;
+            vertical-align: middle;
+            margin-left: 0.5rem;
+        }
+        .update-badge.visible { display: inline-block; }
+        .updates-section { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+        .updates-current { font-size: 0.85rem; color: var(--text-secondary, #6b7280); margin-bottom: 0.5rem; }
+        .updates-status { font-size: 0.85rem; margin: 0.5rem 0; }
+        .updates-status.available { color: #f59e0b; font-weight: 500; }
+        .updates-status.uptodate { color: var(--green, #22c55e); }
         .modal-overlay {
             display: none;
             position: fixed;
@@ -1642,7 +1671,7 @@ function serveDashboard(): void {
 </head>
 <body>
     <div class="topbar">
-        <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= htmlspecialchars($appName) ?></h1>
+        <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= htmlspecialchars($appName) ?><span class="update-badge" id="update-badge" onclick="showSettingsModal()" title="Update available"></span></h1>
         <div class="topbar-right">
             <nav class="nav-links" id="nav-links">
                 <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
@@ -1733,6 +1762,7 @@ function serveDashboard(): void {
     <div class="modal-overlay" id="settings-modal">
         <div class="modal">
             <h3>Settings</h3>
+            <div class="updates-section" id="updates-section"></div>
             <div id="settings-form"><div class="empty">Loading...</div></div>
             <div class="form-actions">
                 <button type="button" class="btn btn-gray" onclick="closeModal('settings-modal')">Cancel</button>
@@ -2014,6 +2044,7 @@ just stop-cron     # stop background cron</pre>
         applyTheme();
 
         const CSRF = '<?= $_SESSION['csrf_token'] ?? '' ?>';
+        let APP_STATUS = {};
 
         async function api(action, data = {}, method = 'GET') {
             const opts = {
@@ -2520,7 +2551,15 @@ just stop-cron     # stop background cron</pre>
         // ─── SETTINGS ────────────────────────────────────
         async function loadSettings() {
             const settings = await api('get_settings');
+            if (!APP_STATUS.version) APP_STATUS = await api('auth_status');
             const container = document.getElementById('settings-form');
+
+            document.getElementById('updates-section').innerHTML = `
+                <div class="updates-current">Version: ${escapeHtml(APP_STATUS.version || '—')}</div>
+                <div id="updates-info"></div>
+                <button class="btn btn-sm btn-gray" onclick="checkForUpdates()" id="check-update-btn">Check for updates</button>
+            `;
+
             container.innerHTML = `
                 <div class="form-group">
                     <label for="settings-app-name">App Name</label>
@@ -2542,6 +2581,58 @@ just stop-cron     # stop background cron</pre>
             if (res.error) { showToast(res.error, 'error'); return; }
             showToast('Settings saved');
             closeModal('settings-modal');
+        }
+
+        async function checkForUpdates() {
+            const btn = document.getElementById('check-update-btn');
+            const info = document.getElementById('updates-info');
+            btn.disabled = true;
+            btn.textContent = 'Checking...';
+            info.innerHTML = '';
+
+            const res = await api('check_update', {}, 'POST');
+            btn.disabled = false;
+
+            if (res.error) {
+                btn.textContent = 'Check for updates';
+                info.innerHTML = `<div class="updates-status" style="color:var(--red)">${escapeHtml(res.error)}</div>`;
+                return;
+            }
+
+            APP_STATUS.version = res.current_version;
+            APP_STATUS.update_available = res.update_available;
+
+            const badge = document.getElementById('update-badge');
+            if (res.update_available) {
+                badge.classList.add('visible');
+                btn.textContent = 'Check again';
+                info.innerHTML = `
+                    <div class="updates-status available">Update available: v${escapeHtml(res.latest_version)}</div>
+                    <button class="btn btn-sm" style="margin-top:0.25rem" onclick="applyUpdate()">Apply update</button>
+                `;
+            } else {
+                badge.classList.remove('visible');
+                btn.textContent = 'Check again';
+                info.innerHTML = `<div class="updates-status uptodate">Up to date</div>`;
+            }
+        }
+
+        async function applyUpdate() {
+            if (!confirm('Apply update? A backup of index.php will be created.')) return;
+
+            const info = document.getElementById('updates-info');
+            const btn = document.querySelector('#updates-info .btn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
+
+            const res = await api('apply_update', {}, 'POST');
+            if (res.error) {
+                showToast(res.error, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Apply update'; }
+                return;
+            }
+
+            showToast(`Updated from v${res.previous_version} to v${res.new_version}`);
+            setTimeout(() => location.reload(), 1500);
         }
 
         // ─── HELPERS ─────────────────────────────────────
@@ -2604,6 +2695,12 @@ just stop-cron     # stop background cron</pre>
             showRecoveryKeyModal(rk, rkReset);
         }
 
+        (async () => {
+            APP_STATUS = await api('auth_status');
+            const badge = document.getElementById('update-badge');
+            if (APP_STATUS.update_available) badge.classList.add('visible');
+        })();
+
         function startRefreshTimer(elId, interval, cb) {
             let countdown = interval;
             setInterval(() => {
@@ -2625,11 +2722,27 @@ just stop-cron     # stop background cron</pre>
 // ============================================================================
 
 function apiAuthStatus(): void {
+    $db = getDb();
+
+    // Check for updates: clear flag if local version already matches latest
+    $updateAvailable = false;
+    $latestVersionRow = $db->query("SELECT value FROM settings WHERE key = 'latest_version'")->fetch();
+    if ($latestVersionRow && $latestVersionRow['value']) {
+        if (version_compare(APP_VERSION, $latestVersionRow['value'], '>=')) {
+            $db->exec("DELETE FROM settings WHERE key = 'update_available'");
+        } else {
+            $flag = $db->query("SELECT value FROM settings WHERE key = 'update_available'")->fetch();
+            $updateAvailable = $flag && $flag['value'] === '1';
+        }
+    }
+
     jsonResponse([
         'needs_setup' => needsSetup(),
         'authenticated' => isAuthenticated(),
         'user' => getCurrentUser(),
         'csrf_token' => $_SESSION['csrf_token'] ?? '',
+        'version' => APP_VERSION,
+        'update_available' => $updateAvailable,
     ]);
 }
 
@@ -3135,6 +3248,107 @@ function apiUpdateSettings(): void {
         $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$key, $value]);
     }
     jsonResponse(['ok' => true]);
+}
+
+// ============================================================================
+// API: UPDATES
+// ============================================================================
+
+function apiCheckUpdate(): void {
+    requireAuth();
+    $db = getDb();
+
+    // Return cached result if checked within 24h
+    $lastCheck = $db->query("SELECT value FROM settings WHERE key = 'last_update_check_at'")->fetch();
+    if ($lastCheck && $lastCheck['value']) {
+        $lastTime = strtotime($lastCheck['value']);
+        if ($lastTime && (time() - $lastTime) < 86400) {
+            $latest = $db->query("SELECT value FROM settings WHERE key = 'latest_version'")->fetch();
+            $flag = $db->query("SELECT value FROM settings WHERE key = 'update_available'")->fetch();
+            jsonResponse([
+                'update_available' => $flag && $flag['value'] === '1',
+                'latest_version' => $latest ? $latest['value'] : APP_VERSION,
+                'current_version' => APP_VERSION,
+                'last_checked' => $lastCheck['value'],
+            ]);
+        }
+    }
+
+    // Fetch from GitHub
+    $ctx = stream_context_create(['http' => [
+        'method' => 'GET',
+        'header' => "User-Agent: Uptime/" . APP_VERSION . "\r\n",
+        'timeout' => 10,
+        'ignore_errors' => true,
+    ]]);
+    $content = @file_get_contents(GITHUB_RAW_URL, false, $ctx);
+    if ($content === false) {
+        jsonResponse(['error' => 'Failed to fetch update info'], 502);
+    }
+
+    // Parse version
+    if (!preg_match("/define\('APP_VERSION',\s*'([^']+)'\)/", $content, $m)) {
+        jsonResponse(['error' => 'Invalid remote version format'], 502);
+    }
+    $latestVersion = $m[1];
+    $available = version_compare(APP_VERSION, $latestVersion, '<');
+
+    $now = date('c');
+    setSetting('latest_version', $latestVersion);
+    setSetting('update_available', $available ? '1' : '0');
+    setSetting('last_update_check_at', $now);
+    setSetting('latest_content', $content);
+
+    jsonResponse([
+        'update_available' => $available,
+        'latest_version' => $latestVersion,
+        'current_version' => APP_VERSION,
+        'last_checked' => $now,
+    ]);
+}
+
+function apiApplyUpdate(): void {
+    requireAuth();
+    $db = getDb();
+
+    // Read cached content
+    $contentRow = $db->query("SELECT value FROM settings WHERE key = 'latest_content'")->fetch();
+    if (!$contentRow || !$contentRow['value']) {
+        jsonResponse(['error' => 'No update cached. Run check_update first.'], 400);
+    }
+    $content = $contentRow['value'];
+
+    // Sanity check
+    if (!preg_match("/define\('APP_VERSION',\s*'([^']+)'\)/", $content, $m) || empty($m[1])) {
+        jsonResponse(['error' => 'Cached content is invalid'], 400);
+    }
+    $newVersion = $m[1];
+    if ($newVersion === APP_VERSION) {
+        jsonResponse(['error' => 'Already up to date'], 400);
+    }
+
+    // Backup current file
+    $bakPath = __DIR__ . '/index.php.bak';
+    if (!copy(__DIR__ . '/index.php', $bakPath)) {
+        jsonResponse(['error' => 'Failed to create backup'], 500);
+    }
+
+    // Write new content
+    $previousVersion = APP_VERSION;
+    if (file_put_contents(__DIR__ . '/index.php', $content) === false) {
+        // Restore from backup
+        @copy($bakPath, __DIR__ . '/index.php');
+        jsonResponse(['error' => 'Failed to write update. Restored from backup.'], 500);
+    }
+
+    // Clear update state
+    $db->exec("DELETE FROM settings WHERE key IN ('update_available', 'latest_content')");
+
+    jsonResponse([
+        'ok' => true,
+        'previous_version' => $previousVersion,
+        'new_version' => $newVersion,
+    ]);
 }
 
 // ============================================================================
