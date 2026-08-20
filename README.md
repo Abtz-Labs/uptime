@@ -73,7 +73,11 @@ Or directly:
 php -S localhost:3030 index.php
 ```
 
-### Simulated Cron
+### Scheduled Checks
+
+Site checks are triggered by an external cron job. The cron calls the `run_checks` endpoint, which respects each site's configured interval — only sites that are due get checked. You can safely call it every minute without wasted work.
+
+#### Development
 
 For local testing, run a background loop that triggers checks periodically:
 
@@ -84,10 +88,26 @@ just cron background   # background, every 60s
 just stop-cron     # stop background cron
 ```
 
-For production, set up a system cron job:
+#### Production
+
+Set up a system cron job to call the endpoint every minute:
+
+```bash
+crontab -e
+```
+
+Add this line:
 
 ```
-* * * * * curl -s "https://your-host/?action=run_checks"
+* * * * * curl -sf "https://your-host/?action=run_checks"
+```
+
+Replace `https://your-host` with your actual URL. The `-sf` flags silence output and fail silently on HTTP errors.
+
+If your database is outside the web root (via `UPTIME_DB_FILE`), make sure the cron environment has access to it — e.g.:
+
+```
+* * * * * UPTIME_DB_FILE=/var/data/uptime.sqlite curl -sf "https://your-host/?action=run_checks"
 ```
 
 ## User Manual

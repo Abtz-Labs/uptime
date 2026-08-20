@@ -17,3 +17,10 @@ Session checkpoints for continuity across sessions.
 - DB migration: `recovery_key_hash` column added to users table (Tasssks-style PRAGMA table_info check)
 - DB migration: refactored to `PRAGMA user_version` strategy aligned with Tasssks (`migrateDatabase()` at v3)
 - Test count: 96 (all passing)
+
+## 2026-08-20
+
+- DB migration: refactored `initDatabase()` + new `migrateDatabase()` using `PRAGMA user_version` (v3), legacy DB detection, versioned blocks for webhooks site_id and users recovery_key_hash
+- Help modal: added "Scheduled Checks" section with cron endpoint explanation, production curl line, dev `just cron` recipes
+- README.md: expanded "Simulated Cron" → "Scheduled Checks" with Development/Production subsections, `crontab -e` setup, `-sf` curl flags, `UPTIME_DB_FILE` env note
+- Test count: 100 (all passing)

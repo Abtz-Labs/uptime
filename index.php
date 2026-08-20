@@ -1786,6 +1786,17 @@ function serveDashboard(): void {
 }</pre>
                 </div>
                 <div class="help-section">
+                    <h4>Scheduled Checks</h4>
+                    <p>Site checks are triggered by an external cron job. The cron calls the <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">run_checks</code> endpoint, which respects each site's configured interval — only sites that are due get checked.</p>
+                    <p style="margin-top:0.5rem"><strong>Production (system cron):</strong></p>
+                    <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">* * * * * curl -sf "https://your-host/?action=run_checks"</pre>
+                    <p style="margin-top:0.5rem"><strong>Development (just):</strong></p>
+                    <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">just cron          # foreground, every 60s
+just cron 30       # foreground, every 30s
+just cron background   # background, every 60s
+just stop-cron     # stop background cron</pre>
+                </div>
+                <div class="help-section">
                     <h4>User-Agent</h4>
                     <p>Uptime identifies itself when checking sites using the User-Agent header: <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">AbtzUptimeCrawler/&lt;version&gt;</code>. You can allowlist this in your firewall or server configuration if needed.</p>
                 </div>
