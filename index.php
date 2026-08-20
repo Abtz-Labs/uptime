@@ -50,22 +50,6 @@ function getDb(): PDO {
 
 function initDatabase(): void {
     $db = getDb();
-    // Migration: detect old webhooks table without site_id, drop to recreate below
-    $tables = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='webhooks'")->fetch();
-    if ($tables) {
-        $cols = $db->query("PRAGMA table_info(webhooks)")->fetchAll(PDO::FETCH_COLUMN, 1);
-        if (!in_array('site_id', $cols)) {
-            $db->exec("DROP TABLE webhooks");
-        }
-    }
-    // Migration: add recovery_key_hash to users table
-    $userTables = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")->fetch();
-    if ($userTables) {
-        $cols = $db->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_COLUMN, 1);
-        if (!in_array('recovery_key_hash', $cols)) {
-            $db->exec("ALTER TABLE users ADD COLUMN recovery_key_hash TEXT");
-        }
-    }
     $db->exec("
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -136,6 +120,38 @@ function initDatabase(): void {
             attempted_at TEXT DEFAULT (datetime('now'))
         );
     ");
+
+    migrateDatabase($db);
+}
+
+function migrateDatabase(PDO $db): void {
+    $version = (int) $db->query('PRAGMA user_version')->fetchColumn();
+
+    // Existing DB created before version-based migrations — stamp and skip
+    if ($version === 0 && $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")->fetch()) {
+        $version = 1;
+    }
+
+    // Version 1 → 2: Webhooks site_id column
+    if ($version < 2) {
+        $tables = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='webhooks'")->fetch();
+        if ($tables) {
+            $cols = $db->query("PRAGMA table_info(webhooks)")->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (!in_array('site_id', $cols)) {
+                $db->exec("DROP TABLE webhooks");
+            }
+        }
+    }
+
+    // Version 2 → 3: recovery_key_hash column on users
+    if ($version < 3) {
+        $cols = $db->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('recovery_key_hash', $cols)) {
+            $db->exec("ALTER TABLE users ADD COLUMN recovery_key_hash TEXT");
+        }
+    }
+
+    $db->exec('PRAGMA user_version = 3');
 }
 
 function rotateRecoveryKey(int $userId): string {

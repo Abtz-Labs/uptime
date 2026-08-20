@@ -15,4 +15,5 @@ Session checkpoints for continuity across sessions.
 - Webhooks tab: Save button now closes modal when on webhooks tab
 - Recovery key feature: generated on setup, can be used as password replacement, auto-rotates on use, requires new password after recovery login
 - DB migration: `recovery_key_hash` column added to users table (Tasssks-style PRAGMA table_info check)
+- DB migration: refactored to `PRAGMA user_version` strategy aligned with Tasssks (`migrateDatabase()` at v3)
 - Test count: 96 (all passing)
