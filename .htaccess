@@ -1,16 +1,13 @@
 RewriteEngine On
-
-# Redirect everything to index.php
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [L]
 
-# Block access to sensitive files
-<FilesMatch "\.(sqlite|sqlite3|db|sql|env|htaccess|htpasswd)$">
+<FilesMatch "\.(sqlite|sqlite3|db|sql|env|bak)$">
     Require all denied
 </FilesMatch>
 
-# Block .git directory
-<Directory ".git">
+RewriteRule \.git - [F,L]
+
+<Files "test.php">
     Require all denied
-</Directory>
+</Files>
