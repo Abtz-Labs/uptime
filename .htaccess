@@ -8,6 +8,6 @@ RewriteRule ^ index.php [L]
 
 RewriteRule \.git - [F,L]
 
-<Files "test.php">
+<Files "tests.php">
     Require all denied
 </Files>

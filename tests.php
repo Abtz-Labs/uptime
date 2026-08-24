@@ -1,7 +1,7 @@
 <?php
 /**
  * Uptime Tool API Test Suite
- * Run: php test.php
+ * Run: php tests.php
  * Spins up its own test server using test.sqlite (never touches uptime.sqlite).
  */
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -300,14 +300,15 @@ $r = req('list_checks', ['site_id' => $siteId]);
 assert_eq(200, $r['status'], 'list_checks returns 200');
 assert_true(count($r['body']) >= 1, 'at least one check after run_checks');
 $check = $r['body'][0];
-assert_true(in_array($check['status'], ['up', 'down', 'unknown']), 'check has valid status');
+assert_eq('up', $check['status'], 'healthy site (example.com) is reported as up');
+assert_eq(200, $check['status_code'], 'check status_code is 200');
 assert_true(!empty($check['checked_at']), 'check has checked_at');
 
 // Site status updated
 $r = req('list_sites');
 $site = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0] ?? null;
 assert_true(!empty($site['status']), 'site has status field');
-assert_true(in_array($site['status'], ['up', 'down', 'unknown']), 'site status is valid');
+assert_eq('up', $site['status'], 'site status is up in list_sites');
 
 // ─── WEBHOOKS (per-site) ─────────────────────────────────
 section('Webhooks');

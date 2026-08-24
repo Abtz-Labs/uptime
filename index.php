@@ -467,9 +467,10 @@ function checkSite(array $site): array {
     $status = 'up';
     $message = '';
 
-    if ($httpCode !== $site['expected_status']) {
+    $expected = (int) $site['expected_status'];
+    if ($httpCode !== $expected) {
         $status = 'down';
-        $message = "Expected HTTP {$site['expected_status']}, got $httpCode";
+        $message = "Expected HTTP $expected, got $httpCode";
     }
 
     // Check for expected keyword

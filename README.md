@@ -223,11 +223,11 @@ For production, use Apache or Nginx with PHP-FPM. The key security consideration
   Environment=UPTIME_DB_FILE=/var/data/uptime.sqlite
   ```
 - **Deny direct file access.** The application blocks requests to `.sqlite`, `.env`, and `.git` paths internally, but your web server should also enforce this as a second layer.
-- **Do not deploy `test.php` to production.** It is a development-only file.
+- **Do not deploy `tests.php` to production.** It is a development-only file.
 
 ### Apache
 
-A `.htaccess` file is included in the repository. It routes requests through `index.php`, blocks access to database and sensitive files, and denies access to `test.php`. No extra setup needed if your Apache has `mod_rewrite` and `AllowOverride All`.
+A `.htaccess` file is included in the repository. It routes requests through `index.php`, blocks access to database and sensitive files, and denies access to `tests.php`. No extra setup needed if your Apache has `mod_rewrite` and `AllowOverride All`.
 
 ### Nginx
 
@@ -256,7 +256,7 @@ just test
 Or directly:
 
 ```
-php test.php
+php tests.php
 ```
 
 Tests use a temporary database and clean up after themselves.
@@ -269,7 +269,7 @@ Contributions are welcome. Please keep these principles in mind:
 
 2. **No external PHP dependencies.** No Composer, no autoloaders. If you need a library, either implement the necessary logic directly or reconsider the approach.
 
-3. **Write tests.** New features should include corresponding tests in `test.php`. Use TDD when possible (write failing tests first, then implement).
+3. **Write tests.** New features should include corresponding tests in `tests.php`. Use TDD when possible (write failing tests first, then implement).
 
 4. **Keep it simple.** If 50 lines of straightforward code solve the problem, don't write 200 lines of abstracted code. Match the existing style.
 

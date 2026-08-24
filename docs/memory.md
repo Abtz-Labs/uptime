@@ -28,6 +28,14 @@ Session checkpoints for continuity across sessions.
 - Documentation: all three surfaces (README, in-app help, Automation tab) show both `run_checks` and `cleanup_checks` cron examples with token
 - Test count: 114 (all passing)
 
+## 2026-08-24 (PM)
+
+- **Production bug fix**: `checkSite()` strict comparison `$httpCode !== $site['expected_status']` failed on PHP 8.0 where SQLite PDO returns strings not integers (`"200" !== 200` → always down). Fixed with `(int)` cast.
+- **Root cause**: HestiaCP Apache vhost for `uptime.abtz.co` configured with `php8.0-fpm` socket, not 8.1 as expected. PHP 8.0 SQLite returns column values as strings; PHP 8.1 returns proper ints.
+- **Production crontab fix**: `action= cleanup_checks` had a stray space — cleanup never ran.
+- **Test improvement**: assertions now verify healthy sites report `up` (not just "valid status"); test count 115 (all passing)
+- Renamed `test.php` → `tests.php` (updated all refs: Justfile, .htaccess, README.md)
+
 ## 2026-08-20
 
 - DB migration: refactored `initDatabase()` + new `migrateDatabase()` using `PRAGMA user_version` (v3), legacy DB detection, versioned blocks for webhooks site_id and users recovery_key_hash

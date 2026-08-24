@@ -33,7 +33,7 @@ stop:
 
 # Run test suite
 test:
-    php test.php
+    php tests.php
 
 # Simulated cron: run checks every N seconds (default: 60)
 cron *args:
