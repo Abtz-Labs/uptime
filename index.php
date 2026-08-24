@@ -28,6 +28,7 @@ if (php_sapi_name() === 'cli-server') {
 
 define('APP_NAME', 'Uptime');
 define('APP_VERSION', '0.1.0');
+define('CRAWLER_VERSION', '1.0.0');
 define('DB_FILE', getenv('UPTIME_DB_FILE') ?: __DIR__ . '/uptime.sqlite');
 define('DEFAULT_RETENTION_DAYS', 180);
 define('GITHUB_RAW_URL', 'https://raw.githubusercontent.com/Abtz-Labs/uptime/main/index.php');
@@ -431,7 +432,7 @@ function checkSite(array $site): array {
         CURLOPT_MAXREDIRS => 5,
         CURLOPT_NOBODY => $site['method'] === 'HEAD',
         CURLOPT_CUSTOMREQUEST => $site['method'],
-        CURLOPT_USERAGENT => 'AbtzUptimeCrawler/' . APP_VERSION,
+        CURLOPT_USERAGENT => 'AbtzUptimeCrawler/' . CRAWLER_VERSION,
     ]);
 
     $start = microtime(true);
@@ -1833,7 +1834,7 @@ just stop-cron     # stop background cron</pre>
                 </div>
                 <div class="help-section">
                     <h4>User-Agent</h4>
-                    <p>Uptime identifies itself when checking sites using the User-Agent header: <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">AbtzUptimeCrawler/&lt;version&gt;</code>. You can allowlist this in your firewall or server configuration if needed.</p>
+                    <p>Uptime identifies itself when checking sites using the User-Agent header: <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">AbtzUptimeCrawler/1.0.0</code>. You can allowlist this in your firewall or server configuration if needed.</p>
                 </div>
                 <div class="help-section">
                     <h4>Recovery Key</h4>

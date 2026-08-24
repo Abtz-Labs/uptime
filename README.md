@@ -104,17 +104,22 @@ Add this line:
 
 Replace `https://your-host` with your actual URL. The `-sf` flags silence output and fail silently on HTTP errors.
 
-If your database is outside the web root (via `UPTIME_DB_FILE`), make sure the cron environment has access to it — e.g.:
-
-```
-* * * * * UPTIME_DB_FILE=/var/data/uptime.sqlite curl -sf "https://your-host/?action=run_checks"
-```
-
 ## User Manual
 
 ### First Run
 
-Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. On first access, Uptime shows a setup screen. Create your admin account (name, email, password). This account has full control over the application.
+On first access, Uptime shows a setup screen. Create your admin account (name, email, password). This account has full control over the application.
+
+### Dashboard
+
+Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. The dashboard shows all sites with:
+
+- Current status (green dot = up, red = down, grey = unknown)
+- Response time of the last check
+- 24h uptime percentage
+- Timeline bar showing recent check history
+
+The sites list auto-refreshes every 30 seconds.
 
 ### Sites
 
@@ -134,18 +139,7 @@ Sites can be temporarily disabled without deleting them. Disabled sites are skip
 
 ### Groups
 
-Groups let you organize sites logically (e.g., Production, Staging). Drag the `⠿` handle to reorder groups. Sites can be assigned to a group via the site edit modal.
-
-### Dashboard
-
-The dashboard shows all sites with:
-
-- Current status (green dot = up, red = down, grey = unknown)
-- Response time of the last check
-- 24h uptime percentage
-- Timeline bar showing recent check history
-
-The sites list auto-refreshes every 30 seconds.
+Groups let you organize sites logically (e.g., Production, Staging), when presenting them in the Status Page. Drag the `⠿` handle to reorder groups. Sites can be assigned to a group via the site edit modal.
 
 ### Status Page
 
@@ -175,7 +169,7 @@ Webhook notifications include a 5-minute spam cooldown per site to avoid alert f
 
 ### User-Agent
 
-Uptime identifies itself when checking sites using the User-Agent header: `AbtzUptimeCrawler/<version>`. You can allowlist this in your firewall or server configuration if needed.
+Uptime identifies itself when checking sites using the User-Agent header: `AbtzUptimeCrawler/1.0.0`. You can whitelist this in your firewall or server configuration if needed.
 
 ### Recovery Key
 
@@ -185,7 +179,7 @@ To use the recovery key, enter it in the password field on the login page. After
 
 ### Retention
 
-Check history is retained for 180 days by default (configurable in App Settings). Old records are cleaned up automatically via the `cleanup_checks` endpoint.
+Check history is retained for 180 days by default (configurable in App Settings). Old records are cleaned up automatically via the `cleanup_checks` endpoint. See the `Schedule Checks` session to learn how to set up CRON to properly run the `cleanup_checks` endpoint.
 
 ### Keyboard Shortcuts
 
