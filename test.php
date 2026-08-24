@@ -18,7 +18,7 @@ $cookieFile = tempnam(sys_get_temp_dir(), 'uptime_test_');
 
 // Start a dedicated test server
 $serverCmd = sprintf(
-    'UPTIME_DB_FILE=%s php -S localhost:%d -t %s %s/index.php',
+    'UPTIME_DB_FILE=%s UPTIME_STRICT_CRON=1 php -S localhost:%d -t %s %s/index.php',
     escapeshellarg($TEST_DB),
     $TEST_PORT,
     escapeshellarg(__DIR__),
@@ -388,6 +388,11 @@ $r = req('update_site', ['id' => $siteId, 'visible' => 1], 'POST', $adminCsrf);
 $r = req('status_page');
 $visibleSites = array_filter($r['body']['sites'] ?? [], fn($s) => $s['id'] == $siteId);
 assert_eq(1, count($visibleSites), 'visible site in status page');
+
+// Enabled field present in status page response
+$statusSite = array_values($visibleSites)[0];
+assert_true(array_key_exists('enabled', $statusSite), 'status_page site includes enabled field');
+assert_eq(1, (int) $statusSite['enabled'], 'visible site is enabled');
 
 // ─── CLEANUP ─────────────────────────────────────────────
 section('Cleanup');

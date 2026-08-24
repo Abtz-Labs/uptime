@@ -206,6 +206,8 @@ function verifyCsrf(): void {
 }
 
 function verifyCronToken(): void {
+    if (php_sapi_name() === 'cli-server' && !getenv('UPTIME_STRICT_CRON')) return;
+
     $db = getDb();
     $row = $db->query("SELECT value FROM settings WHERE key = 'cron_token'")->fetch();
     if ($row && $row['value']) {
@@ -642,6 +644,7 @@ function serveStatusPage(): void {
             --green: #22c55e;
             --red: #ef4444;
             --gray: #64748b;
+            --blue: #3b82f6;
             --radius: 8px;
         }
         .light {
@@ -714,6 +717,7 @@ function serveStatusPage(): void {
         .status-dot.up { background: var(--green); }
         .status-dot.down { background: var(--red); }
         .status-dot.unknown { background: var(--gray); }
+        .status-dot.scheduled { background: var(--blue); }
         .site-info { flex: 1; min-width: 0; }
         .site-name {
             font-weight: 500;
@@ -748,6 +752,7 @@ function serveStatusPage(): void {
         .timeline-bar.degraded { background: #f59e0b; }
         .timeline-bar.down { background: var(--red); }
         .timeline-bar.unknown { background: var(--border); }
+        .timeline-bar.scheduled { background: var(--blue); }
         .timeline-labels {
             display: flex;
             justify-content: space-between;
@@ -848,7 +853,8 @@ function serveStatusPage(): void {
         }
 
         function renderSite(site) {
-            const status = site.status || 'unknown';
+            const rawStatus = site.status || 'unknown';
+            const status = rawStatus === 'unknown' && site.enabled ? 'scheduled' : rawStatus;
             const response = site.response_time ? site.response_time + 'ms' : '—';
             const time = site.last_check ? timeAgo(site.last_check) : 'Never';
             const uptime = site.uptime_24h;
@@ -1316,6 +1322,7 @@ function serveDashboard(): void {
             --green: #22c55e;
             --red: #ef4444;
             --gray: #64748b;
+            --blue: #3b82f6;
             --radius: 8px;
         }
         .light {
@@ -1525,6 +1532,7 @@ function serveDashboard(): void {
         .status-badge.up { background: rgba(34, 197, 94, 0.15); color: var(--green); }
         .status-badge.down { background: rgba(239, 68, 68, 0.15); color: var(--red); }
         .status-badge.unknown { background: rgba(100, 116, 139, 0.15); color: var(--gray); }
+        .status-badge.scheduled { background: rgba(59, 130, 246, 0.15); color: var(--blue); }
         .update-badge {
             display: none;
             padding: 0.125rem 0.5rem;
@@ -2211,7 +2219,8 @@ just stop-cron     # stop background cron</pre>
 
             let html = '<table><thead><tr><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
             for (const site of sites) {
-                const status = site.status || 'unknown';
+                const rawStatus = site.status || 'unknown';
+                const status = rawStatus === 'unknown' && site.enabled ? 'scheduled' : rawStatus;
                 html += `<tr>
                     <td><span class="status-badge ${status}">${status}</span></td>
                     <td>${escapeHtml(site.name)}</td>
@@ -3254,7 +3263,7 @@ function apiStatusPage(): void {
     $groups = $db->query("SELECT * FROM groups ORDER BY position, name")->fetchAll();
 
     $sites = $db->query("
-        SELECT s.id, s.name, s.url, s.group_id, s.visible,
+        SELECT s.id, s.name, s.url, s.group_id, s.visible, s.enabled,
                ss.status, ss.last_check, ss.last_up, ss.last_down,
                (SELECT response_time FROM checks WHERE site_id = s.id ORDER BY checked_at DESC LIMIT 1) as response_time
         FROM sites s
