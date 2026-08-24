@@ -471,6 +471,87 @@ if (isset($r['body']['id'])) {
     req('delete_site', ['id' => $r['body']['id']], 'POST', $adminCsrf);
 }
 
+// ─── CRON TOKEN ─────────────────────────────────────────
+section('Cron Token');
+
+// Without token set, run_checks works freely
+$r = req('run_checks');
+assert_eq(200, $r['status'], 'run_checks works without token when none is set');
+
+$r = req('cleanup_checks');
+assert_eq(200, $r['status'], 'cleanup_checks works without token when none is set');
+
+// Generate a cron token
+$r = req('generate_cron_token', [], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'generate_cron_token succeeds');
+assert_true(!empty($r['body']['cron_token']), 'returns a cron token');
+$cronToken = $r['body']['cron_token'];
+
+// Without token, run_checks is now rejected
+$r = req('run_checks');
+assert_eq(401, $r['status'], 'run_checks rejected without token after token is set');
+
+// With wrong token, still rejected
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/?action=run_checks&token=wrong_token",
+    CURLOPT_RETURNTRANSFER => true,
+]);
+$body = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+assert_eq(401, $code, 'run_checks rejected with wrong token');
+
+// With correct token, run_checks works
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/?action=run_checks&token=$cronToken",
+    CURLOPT_RETURNTRANSFER => true,
+]);
+$body = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+assert_eq(200, $code, 'run_checks works with correct token');
+
+// cleanup_checks also requires token
+$r = req('cleanup_checks');
+assert_eq(401, $r['status'], 'cleanup_checks rejected without token after token is set');
+
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/?action=cleanup_checks&token=$cronToken",
+    CURLOPT_RETURNTRANSFER => true,
+]);
+$body = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+assert_eq(200, $code, 'cleanup_checks works with correct token');
+
+// Regenerating token invalidates old one
+$r = req('generate_cron_token', [], 'POST', $adminCsrf);
+$newCronToken = $r['body']['cron_token'];
+assert_true($newCronToken !== $cronToken, 'new token differs from old');
+
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/?action=run_checks&token=$cronToken",
+    CURLOPT_RETURNTRANSFER => true,
+]);
+$body = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+assert_eq(401, $code, 'old token rejected after regeneration');
+
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/?action=run_checks&token=$newCronToken",
+    CURLOPT_RETURNTRANSFER => true,
+]);
+$body = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+assert_eq(200, $code, 'new token works after regeneration');
+
 // ─── RESULTS ─────────────────────────────────────────────
 echo "\n" . str_repeat('=', 40) . "\n";
 echo "Results: \033[32m$passed passed\033[0m, " . ($failed ? "\033[31m$failed failed\033[0m" : "0 failed") . "\n";

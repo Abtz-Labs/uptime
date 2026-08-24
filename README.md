@@ -96,13 +96,20 @@ Set up a system cron job to call the endpoint every minute:
 crontab -e
 ```
 
-Add this line:
+Add these lines:
 
 ```
-* * * * * curl -sf "https://your-host/?action=run_checks"
+* * * * * curl -sf "https://your-host/?action=run_checks&token=YOUR_TOKEN"
+0 3 * * * curl -sf "https://your-host/?action=cleanup_checks&token=YOUR_TOKEN"
 ```
 
-Replace `https://your-host` with your actual URL. The `-sf` flags silence output and fail silently on HTTP errors.
+The first line runs site checks every minute. The second runs data retention cleanup daily at 3 AM (removes check records older than the configured retention period).
+
+Replace `https://your-host` with your actual URL and `YOUR_TOKEN` with the cron token generated in Settings → Automation. The `-sf` flags silence output and fail silently on HTTP errors.
+
+#### Cron Token
+
+To prevent unauthorized access to the `run_checks` and `cleanup_checks` endpoints, generate a cron token in the admin dashboard (Settings → Automation). Once a token is generated, both endpoints require it via the `?token=...` query parameter. Without a generated token, the endpoints remain open (backward compatible).
 
 ## User Manual
 

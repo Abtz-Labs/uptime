@@ -205,6 +205,17 @@ function verifyCsrf(): void {
     }
 }
 
+function verifyCronToken(): void {
+    $db = getDb();
+    $row = $db->query("SELECT value FROM settings WHERE key = 'cron_token'")->fetch();
+    if ($row && $row['value']) {
+        $provided = $_GET['token'] ?? '';
+        if (!$provided || !hash_equals($row['value'], $provided)) {
+            jsonResponse(['error' => 'Invalid or missing cron token'], 401);
+        }
+    }
+}
+
 function jsonResponse(mixed $data, int $status = 200): never {
     http_response_code($status);
     header('Content-Type: application/json');
@@ -555,6 +566,7 @@ if ($action) {
         // Settings
         'get_settings' => apiGetSettings(),
         'update_settings' => apiUpdateSettings(),
+        'generate_cron_token' => apiGenerateCronToken(),
 
         // Updates
         'check_update' => apiCheckUpdate(),
@@ -1768,8 +1780,17 @@ function serveDashboard(): void {
     <div class="modal-overlay" id="settings-modal">
         <div class="modal">
             <h3>Settings</h3>
-            <div class="updates-section" id="updates-section"></div>
-            <div id="settings-form"><div class="empty">Loading...</div></div>
+            <div class="modal-tabs" id="settings-modal-tabs">
+                <button class="active" onclick="switchSettingsTab('general')">General</button>
+                <button onclick="switchSettingsTab('automation')">Automation</button>
+            </div>
+            <div class="modal-tab active" id="settings-tab-general">
+                <div class="updates-section" id="updates-section"></div>
+                <div id="settings-form"><div class="empty">Loading...</div></div>
+            </div>
+            <div class="modal-tab" id="settings-tab-automation">
+                <div id="settings-automation-form"><div class="empty">Loading...</div></div>
+            </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-gray" onclick="closeModal('settings-modal')">Cancel</button>
                 <button type="button" class="btn" onclick="saveSettings()" data-modal-save>Save</button>
@@ -1824,8 +1845,10 @@ function serveDashboard(): void {
                 <div class="help-section">
                     <h4>Scheduled Checks</h4>
                     <p>Site checks are triggered by an external cron job. The cron calls the <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">run_checks</code> endpoint, which respects each site's configured interval — only sites that are due get checked.</p>
+                    <p style="margin-top:0.5rem">Generate a <strong>Cron Token</strong> in Settings → Automation to protect these endpoints from unauthorized access. Once set, the token is required as a <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">?token=...</code> query parameter.</p>
                     <p style="margin-top:0.5rem"><strong>Production (system cron):</strong></p>
-                    <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">* * * * * curl -sf "https://your-host/?action=run_checks"</pre>
+                    <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">* * * * * curl -sf "https://your-host/?action=run_checks&token=YOUR_TOKEN"
+0 3 * * * curl -sf "https://your-host/?action=cleanup_checks&token=YOUR_TOKEN"</pre>
                     <p style="margin-top:0.5rem"><strong>Development (just):</strong></p>
                     <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">just cron          # foreground, every 60s
 just cron 30       # foreground, every 30s
@@ -2555,6 +2578,14 @@ just stop-cron     # stop background cron</pre>
         }
 
         // ─── SETTINGS ────────────────────────────────────
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('#settings-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#settings-modal .modal-tab').forEach(t => t.classList.remove('active'));
+            const btn = document.querySelector(`#settings-modal .modal-tabs button[onclick*="${tab}"]`);
+            if (btn) btn.classList.add('active');
+            document.getElementById('settings-tab-' + tab).classList.add('active');
+        }
+
         async function loadSettings() {
             const settings = await api('get_settings');
             if (!APP_STATUS.version) APP_STATUS = await api('auth_status');
@@ -2576,7 +2607,36 @@ just stop-cron     # stop background cron</pre>
                     <input type="number" id="settings-retention" value="${settings.retention_days || 180}">
                 </div>
             `;
+
+            const automationContainer = document.getElementById('settings-automation-form');
+            const cronToken = settings.cron_token || '';
+            automationContainer.innerHTML = `
+                <div class="form-group">
+                    <label for="settings-cron-token">Cron Token</label>
+                    <div style="display:flex;gap:0.5rem">
+                        <input type="text" id="settings-cron-token" value="${escapeHtml(cronToken)}" readonly placeholder="Click Generate to create a token">
+                        <button type="button" class="btn btn-sm btn-gray" onclick="generateCronToken()" style="white-space:nowrap">Generate</button>
+                    </div>
+                    <small style="color:var(--text-muted);margin-top:0.25rem;display:block">When set, <code>run_checks</code> and <code>cleanup_checks</code> endpoints require this token via <code>?token=...</code> query parameter.</small>
+                </div>
+                <div class="form-group">
+                    <label>Cron Example</label>
+                    <pre id="cron-example" style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin:0;line-height:1.6">* * * * * curl -sf "https://your-host/?action=run_checks&token=${cronToken || 'YOUR_TOKEN'}"
+0 3 * * * curl -sf "https://your-host/?action=cleanup_checks&token=${cronToken || 'YOUR_TOKEN'}"</pre>
+                </div>
+            `;
+
+            switchSettingsTab('general');
             focusFirstInput('settings-modal');
+        }
+
+        async function generateCronToken() {
+            const res = await api('generate_cron_token', {}, 'POST');
+            if (res.error) { showToast(res.error, 'error'); return; }
+            document.getElementById('settings-cron-token').value = res.cron_token;
+            const example = document.getElementById('cron-example');
+            example.textContent = `* * * * * curl -sf "https://your-host/?action=run_checks&token=${res.cron_token}"\n0 3 * * * curl -sf "https://your-host/?action=cleanup_checks&token=${res.cron_token}"`;
+            showToast('Cron token generated');
         }
 
         async function saveSettings() {
@@ -3008,7 +3068,7 @@ function apiDeleteSite(): void {
 // ============================================================================
 
 function apiRunChecks(): void {
-    // No CSRF check needed for cron endpoint
+    verifyCronToken();
     $result = runChecks();
     $cleanup = cleanupChecks();
     $result['cleaned'] = $cleanup['deleted'];
@@ -3250,10 +3310,19 @@ function apiUpdateSettings(): void {
     $input = getInput();
     $db = getDb();
 
+    $protected = ['cron_token'];
     foreach ($input as $key => $value) {
+        if (in_array($key, $protected)) continue;
         $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")->execute([$key, $value]);
     }
     jsonResponse(['ok' => true]);
+}
+
+function apiGenerateCronToken(): void {
+    requireAuth();
+    $token = generateToken(32);
+    setSetting('cron_token', $token);
+    jsonResponse(['cron_token' => $token]);
 }
 
 // ============================================================================
@@ -3362,6 +3431,7 @@ function apiApplyUpdate(): void {
 // ============================================================================
 
 function apiCleanupChecks(): void {
+    verifyCronToken();
     $result = cleanupChecks();
     jsonResponse($result);
 }
