@@ -1058,6 +1058,9 @@ function serveLoginPage(): void {
         }
         applyTheme();
 
+        sessionStorage.removeItem('rk');
+        sessionStorage.removeItem('rk_reset');
+
         const savedEmail = localStorage.getItem('uptime_email');
         const emailEl = document.getElementById('email');
         const passwordEl = document.getElementById('password');
@@ -1240,6 +1243,8 @@ function serveSetupPage(): void {
             localStorage.setItem('theme', isLight ? 'light' : 'dark');
         }
         applyTheme();
+        sessionStorage.removeItem('rk');
+        sessionStorage.removeItem('rk_reset');
 
         document.getElementById('setup-form').addEventListener('submit', async (e) => {
             e.preventDefault();

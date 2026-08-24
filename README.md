@@ -114,7 +114,7 @@ If your database is outside the web root (via `UPTIME_DB_FILE`), make sure the c
 
 ### First Run
 
-On first access, Uptime shows a setup screen. Create your admin account (name, email, password). This account has full control over the application.
+Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. On first access, Uptime shows a setup screen. Create your admin account (name, email, password). This account has full control over the application.
 
 ### Sites
 
