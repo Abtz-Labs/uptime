@@ -20,7 +20,8 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 - Dark/light theme toggle
 - Recovery key for password recovery
 - Automatic data retention cleanup
-- Custom User-Agent for crawler identification (`AbtzUptimeCrawler/<version>`)
+- Cron token protection for check endpoints
+- Custom User-Agent for crawler identification (`AbtzUptimeCrawler/1.0.0`)
 
 ## Requirements
 
@@ -121,7 +122,7 @@ On first access, Uptime shows a setup screen. Create your admin account (name, e
 
 Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. The dashboard shows all sites with:
 
-- Current status (green dot = up, red = down, grey = unknown)
+- Current status (green dot = up, red = down, blue = scheduled, grey = unknown/disabled)
 - Response time of the last check
 - 24h uptime percentage
 - Timeline bar showing recent check history
