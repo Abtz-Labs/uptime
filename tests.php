@@ -572,6 +572,31 @@ assert_eq(200, $r['status'], 'update_settings succeeds');
 $r = req('get_settings');
 assert_eq('My Uptime', $r['body']['app_name'] ?? '', 'app_name updated');
 
+// app_name only affects the status page title, not the dashboard
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/",
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_COOKIEFILE => $cookieFile,
+]);
+$html = curl_exec($ch);
+curl_close($ch);
+assert_true(str_contains($html, '<title>My Uptime'), 'status page uses custom app_name in title');
+assert_true(str_contains($html, '>My Uptime<'), 'status page uses custom app_name in heading');
+
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => "$BASE/dash",
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_COOKIEFILE => $cookieFile,
+    CURLOPT_COOKIEJAR => $cookieFile,
+    CURLOPT_FOLLOWLOCATION => true,
+]);
+$html = curl_exec($ch);
+curl_close($ch);
+assert_true(str_contains($html, '<title>Dashboard — Uptime</title>'), 'dashboard title always says Uptime');
+assert_true(!str_contains($html, 'My Uptime'), 'dashboard does not use custom app_name');
+
 // ─── SECURITY: HEADERS ──────────────────────────────────
 section('Security Headers');
 

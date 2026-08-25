@@ -1061,16 +1061,13 @@ function serveStatusPage(): void {
 }
 
 function serveLoginPage(): void {
-    $db = getDb();
-    $appNameRow = $db->query("SELECT value FROM settings WHERE key = 'app_name'")->fetch();
-    $appName = ($appNameRow && $appNameRow['value']) ? $appNameRow['value'] : APP_NAME;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — <?= htmlspecialchars($appName) ?></title>
+    <title>Login — <?= APP_NAME ?></title>
     <style>
         :root {
             --bg: #0f172a;
@@ -1164,7 +1161,7 @@ function serveLoginPage(): void {
         <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
         </button>
-        <h1><?= htmlspecialchars($appName) ?></h1>
+        <h1><?= APP_NAME ?></h1>
         <form id="login-form">
             <div class="form-group">
                 <label for="email">Email</label>
@@ -1418,9 +1415,6 @@ function serveSetupPage(): void {
 }
 
 function serveDashboard(): void {
-    $db = getDb();
-    $appNameRow = $db->query("SELECT value FROM settings WHERE key = 'app_name'")->fetch();
-    $appName = ($appNameRow && $appNameRow['value']) ? $appNameRow['value'] : APP_NAME;
     $user = getCurrentUser();
 ?>
 <!DOCTYPE html>
@@ -1428,7 +1422,7 @@ function serveDashboard(): void {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard — <?= htmlspecialchars($appName) ?></title>
+    <title>Dashboard — <?= APP_NAME ?></title>
     <style>
         :root {
             --bg: #0f172a;
@@ -1823,7 +1817,7 @@ function serveDashboard(): void {
 </head>
 <body>
     <div class="topbar">
-        <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= htmlspecialchars($appName) ?><span class="update-badge" id="update-badge" onclick="showSettingsModal()" title="Update available"></span></h1>
+        <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= APP_NAME ?><span class="update-badge" id="update-badge" onclick="showSettingsModal()" title="Update available"></span></h1>
         <div class="topbar-right">
             <nav class="nav-links" id="nav-links">
                 <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
@@ -2815,7 +2809,7 @@ just stop-cron     # stop background cron</pre>
 
             container.innerHTML = `
                 <div class="form-group">
-                    <label for="settings-app-name">App Name</label>
+                    <label for="settings-app-name">Status Page Title</label>
                     <input type="text" id="settings-app-name" value="${escapeHtml(settings.app_name || '')}">
                 </div>
                 <div class="form-group">
