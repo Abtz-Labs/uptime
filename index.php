@@ -1507,6 +1507,9 @@ function serveDashboard(): void {
         .btn-danger { background: var(--red); }
         .btn-danger:hover { background: #dc2626; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        .btn-outlined { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+        .btn-outlined:hover { background: rgba(59, 130, 246, 0.15); color: var(--primary); border-color: var(--primary); }
+        .btn-outlined-danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--red); border-color: var(--red); }
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -1636,6 +1639,10 @@ function serveDashboard(): void {
         .modal-tab { display: none; }
         .modal-tab.active { display: block; }
         .modal-lg { max-width: 640px; }
+        .modal-xl { max-width: 800px; }
+        .checks-table { font-size: 0.8125rem; }
+        .checks-table td:nth-child(2), .checks-table td:nth-child(3), .checks-table td:nth-child(4) { white-space: nowrap; }
+        .checks-table code { font-size: 0.8125rem; background: var(--bg); padding: 0.125rem 0.375rem; border-radius: var(--radius); }
         .empty { text-align: center; padding: 2rem; color: var(--text-muted); }
         .toast {
             position: fixed;
@@ -1803,6 +1810,28 @@ function serveDashboard(): void {
             <div class="form-actions">
                 <button type="button" class="btn btn-gray" onclick="closeModal('settings-modal')">Cancel</button>
                 <button type="button" class="btn" onclick="saveSettings()" data-modal-save>Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Check Logs Modal -->
+    <div class="modal-overlay" id="checks-modal">
+        <div class="modal modal-xl">
+            <h3 id="checks-modal-title">Logs</h3>
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+                <label for="checks-period" style="font-size:0.8125rem;color:var(--text-muted)">Filter by</label>
+                <select id="checks-period" onchange="loadChecksData()" style="padding:0.375rem 0.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:0.8125rem">
+                    <option value="">All time</option>
+                    <option value="1h">Last hour</option>
+                    <option value="6h" selected>Last 6 hours</option>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                </select>
+            </div>
+            <div id="checks-content"><div class="empty">Loading...</div></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-gray" onclick="closeModal('checks-modal')">Close</button>
             </div>
         </div>
     </div>
@@ -2228,8 +2257,9 @@ just stop-cron     # stop background cron</pre>
                     <td class="hide-mobile"><a href="${escapeHtml(site.url)}" target="_blank" style="color:var(--text-muted)">${escapeHtml(site.url)}</a></td>
                     <td>${site.interval}s</td>
                     <td>
-                        <button class="btn btn-sm" onclick="editSite(${site.id})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteSite(${site.id}, '${escapeHtml(site.name)}')">Delete</button>
+                        <button class="btn btn-sm btn-outlined" onclick="showChecks(${site.id}, '${escapeHtml(site.name)}')">Logs</button>
+                        <button class="btn btn-sm btn-outlined" onclick="editSite(${site.id})">Edit</button>
+                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteSite(${site.id}, '${escapeHtml(site.name)}')">Delete</button>
                     </td>
                 </tr>`;
             }
@@ -2292,6 +2322,58 @@ just stop-cron     # stop background cron</pre>
             if (!await showConfirm('Delete Site', `Delete site "${name}"?`)) return;
             await api('delete_site', { id }, 'POST');
             loadSites();
+        }
+
+        let _checksSiteId = null;
+
+        function getChecksPeriodParams() {
+            const v = document.getElementById('checks-period').value;
+            if (!v) return {};
+            const now = new Date();
+            let from;
+            if (v === '1h') from = new Date(now - 3600000);
+            else if (v === '6h') from = new Date(now - 21600000);
+            else if (v === '24h') from = new Date(now - 86400000);
+            else if (v === '7d') from = new Date(now - 604800000);
+            else if (v === '30d') from = new Date(now - 2592000000);
+            return { from: from.toISOString() };
+        }
+
+        async function loadChecksData() {
+            if (!_checksSiteId) return;
+            const params = { site_id: _checksSiteId, ...getChecksPeriodParams() };
+            const checks = await api('list_checks', params);
+            if (!checks.length) {
+                document.getElementById('checks-content').innerHTML = '<div class="empty">No checks recorded yet.</div>';
+                return;
+            }
+            renderChecks(checks);
+        }
+
+        function renderChecks(checks) {
+            let html = '<table class="checks-table"><thead><tr><th>Time</th><th>Status</th><th>Code</th><th>Response</th><th>Message</th></tr></thead><tbody>';
+            for (const c of checks) {
+                const t = new Date(c.checked_at);
+                const time = t.toLocaleString();
+                html += `<tr>
+                    <td>${time}</td>
+                    <td><span class="status-badge ${c.status}">${c.status}</span></td>
+                    <td>${c.status_code || '—'}</td>
+                    <td>${c.response_time != null ? c.response_time + 'ms' : '—'}</td>
+                    <td><code>${escapeHtml(c.message || 'Success')}</code></td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('checks-content').innerHTML = html;
+        }
+
+        async function showChecks(siteId, siteName) {
+            _checksSiteId = siteId;
+            document.getElementById('checks-modal-title').textContent = siteName + ' logs';
+            document.getElementById('checks-period').value = '6h';
+            document.getElementById('checks-content').innerHTML = '<div class="empty">Loading...</div>';
+            document.getElementById('checks-modal').classList.add('active');
+            await loadChecksData();
         }
 
         document.getElementById('site-form').addEventListener('submit', async (e) => {
@@ -3090,9 +3172,23 @@ function apiListChecks(): void {
     $siteId = (int) ($_GET['site_id'] ?? 0);
     if (!$siteId) jsonResponse(['error' => 'Missing site_id'], 400);
 
+    $sql = "SELECT * FROM checks WHERE site_id = ?";
+    $params = [$siteId];
+
+    if (!empty($_GET['from'])) {
+        $sql .= " AND checked_at >= ?";
+        $params[] = $_GET['from'];
+    }
+    if (!empty($_GET['to'])) {
+        $sql .= " AND checked_at <= ?";
+        $params[] = $_GET['to'];
+    }
+
+    $sql .= " ORDER BY checked_at DESC LIMIT 500";
+
     $db = getDb();
-    $stmt = $db->prepare("SELECT * FROM checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT 100");
-    $stmt->execute([$siteId]);
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
     jsonResponse($stmt->fetchAll());
 }
 
