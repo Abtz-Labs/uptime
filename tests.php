@@ -401,6 +401,36 @@ $statusSite = array_values($visibleSites)[0];
 assert_true(array_key_exists('enabled', $statusSite), 'status_page site includes enabled field');
 assert_eq(1, (int) $statusSite['enabled'], 'visible site is enabled');
 
+// show_url per-site — ON by default
+$r = req('status_page');
+$statusSite = $r['body']['sites'][0] ?? [];
+assert_true(!empty($statusSite['url']), 'site URL included by default (show_url=1)');
+
+// Disable show_url on this site
+$r = req('update_site', ['id' => $siteId, 'show_url' => 0], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update site show_url to 0');
+
+$r = req('status_page');
+$statusSite = array_values(array_filter($r['body']['sites'], fn($s) => $s['id'] == $siteId))[0] ?? [];
+assert_true(!array_key_exists('url', $statusSite), 'site URL omitted when show_url is off');
+
+// Re-enable show_url
+$r = req('update_site', ['id' => $siteId, 'show_url' => 1], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'restore site show_url to 1');
+
+$r = req('status_page');
+$statusSite = array_values(array_filter($r['body']['sites'], fn($s) => $s['id'] == $siteId))[0] ?? [];
+assert_true(!empty($statusSite['url']), 'site URL included after re-enabling show_url');
+
+// New sites default to show_url=1
+$r = req('create_site', ['name' => 'ShowUrl Test', 'url' => 'https://showurl.test'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create site for show_url default test');
+$showUrlTestId = $r['body']['id'];
+$r = req('list_sites');
+$showUrlSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $showUrlTestId))[0] ?? [];
+assert_eq(1, (int)($showUrlSite['show_url'] ?? 0), 'new site defaults to show_url=1');
+$r = req('delete_site', ['id' => $showUrlTestId], 'POST', $adminCsrf);
+
 // ─── CLEANUP ─────────────────────────────────────────────
 section('Cleanup');
 

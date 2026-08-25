@@ -153,7 +153,15 @@ function migrateDatabase(PDO $db): void {
         }
     }
 
-    $db->exec('PRAGMA user_version = 3');
+    // Version 3 → 4: show_url column on sites
+    if ($version < 4) {
+        $cols = $db->query("PRAGMA table_info(sites)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('show_url', $cols)) {
+            $db->exec("ALTER TABLE sites ADD COLUMN show_url INTEGER DEFAULT 1");
+        }
+    }
+
+    $db->exec('PRAGMA user_version = 4');
 }
 
 function rotateRecoveryKey(int $userId): string {
@@ -798,7 +806,7 @@ function serveStatusPage(): void {
               Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">30</span>s
            </p>
            <div>
-              <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'Saasy</a> Licensed</p>
+              <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'SAASy</a> Licensed</p>
               <p>#<?= APP_VERSION ?> &copy; Abtz Labs.</p>
           </div>
        </div>
@@ -881,12 +889,17 @@ function serveStatusPage(): void {
                 `;
             }
 
+            const nameHtml = site.url
+                ? `<a href="${escapeHtml(site.url)}" target="_blank" rel="noopener">${escapeHtml(site.name)}</a>`
+                : escapeHtml(site.name);
+            const urlHtml = site.url ? `<div class="site-url">${escapeHtml(site.url)}</div>` : '';
+
             return `
                 <div class="site">
                     <div class="status-dot ${status}"></div>
                     <div class="site-info">
-                        <div class="site-name"><a href="${escapeHtml(site.url)}" target="_blank" rel="noopener">${escapeHtml(site.name)}</a></div>
-                        <div class="site-url">${escapeHtml(site.url)}</div>
+                        <div class="site-name">${nameHtml}</div>
+                        ${urlHtml}
                         ${timelineHtml}
                     </div>
                     <div class="site-meta">
@@ -2019,6 +2032,10 @@ just stop-cron     # stop background cron</pre>
                         <label for="site-visible">Visible on status page</label>
                     </div>
                     <div class="form-group checkbox-group">
+                        <input type="checkbox" id="site-show-url" checked>
+                        <label for="site-show-url">Show URL on status page</label>
+                    </div>
+                    <div class="form-group checkbox-group">
                         <input type="checkbox" id="site-notify" checked>
                         <label for="site-notify">Send notifications</label>
                     </div>
@@ -2298,6 +2315,7 @@ just stop-cron     # stop background cron</pre>
             document.getElementById('site-group').value = site ? (site.group_id || '') : '';
             document.getElementById('site-enabled').checked = site ? !!site.enabled : true;
             document.getElementById('site-visible').checked = site ? !!site.visible : true;
+            document.getElementById('site-show-url').checked = site ? !!parseInt(site.show_url) : true;
             document.getElementById('site-notify').checked = site ? !!site.notify : true;
             const whTab = document.getElementById('site-modal-webhooks-tab');
             if (site && site.id) {
@@ -2390,6 +2408,7 @@ just stop-cron     # stop background cron</pre>
                 group_id: document.getElementById('site-group').value || null,
                 enabled: document.getElementById('site-enabled').checked ? 1 : 0,
                 visible: document.getElementById('site-visible').checked ? 1 : 0,
+                show_url: document.getElementById('site-show-url').checked ? 1 : 0,
                 notify: document.getElementById('site-notify').checked ? 1 : 0,
             };
             if (id) data.id = id;
@@ -3098,7 +3117,7 @@ function apiCreateSite(): void {
     if (!filter_var($url, FILTER_VALIDATE_URL)) jsonResponse(['error' => 'Invalid URL'], 400);
 
     $db = getDb();
-    $stmt = $db->prepare("INSERT INTO sites (name, url, method, expected_status, expected_keyword, timeout, interval, group_id, enabled, visible, notify) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $db->prepare("INSERT INTO sites (name, url, method, expected_status, expected_keyword, timeout, interval, group_id, enabled, visible, notify, show_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $name,
         $url,
@@ -3111,6 +3130,7 @@ function apiCreateSite(): void {
         $input['enabled'] ?? 1,
         $input['visible'] ?? 1,
         $input['notify'] ?? 1,
+        $input['show_url'] ?? 1,
     ]);
     $siteId = (int) $db->lastInsertId();
 
@@ -3130,7 +3150,7 @@ function apiUpdateSite(): void {
     $fields = [];
     $params = [];
 
-    foreach (['name', 'url', 'method', 'expected_status', 'expected_keyword', 'timeout', 'interval', 'group_id', 'enabled', 'visible', 'notify'] as $field) {
+    foreach (['name', 'url', 'method', 'expected_status', 'expected_keyword', 'timeout', 'interval', 'group_id', 'enabled', 'visible', 'notify', 'show_url'] as $field) {
         if (array_key_exists($field, $input)) {
             $fields[] = "$field = ?";
             $params[] = $input[$field];
@@ -3360,7 +3380,7 @@ function apiStatusPage(): void {
     $groups = $db->query("SELECT * FROM groups ORDER BY position, name")->fetchAll();
 
     $sites = $db->query("
-        SELECT s.id, s.name, s.url, s.group_id, s.visible, s.enabled,
+        SELECT s.id, s.name, s.url, s.group_id, s.visible, s.enabled, s.show_url,
                ss.status, ss.last_check, ss.last_up, ss.last_down,
                (SELECT response_time FROM checks WHERE site_id = s.id ORDER BY checked_at DESC LIMIT 1) as response_time
         FROM sites s
@@ -3391,6 +3411,11 @@ function apiStatusPage(): void {
         ");
         $checks->execute([$site['id']]);
         $site['timeline'] = $checks->fetchAll();
+
+        if (!(int) $site['show_url']) {
+            unset($site['url']);
+        }
+        unset($site['show_url']);
     }
 
     jsonResponse(['groups' => $groups, 'sites' => $sites]);
