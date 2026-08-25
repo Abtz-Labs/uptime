@@ -14,9 +14,13 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 
 - Monitor unlimited sites with configurable check intervals
 - Status page with timeline bars (green/grey/red) per site
+- Overall uptime indicator (Operational/Degraded/Severely Degraded/Down) with 24h/7d/30d/90d breakdown
+- Per-group uptime averages on the status page
+- Per-site URL visibility toggle (hide URLs from the public status page)
 - Drag-and-drop group reordering
 - Webhook notifications (Slack, Telegram, generic JSON)
 - Public status page (no login required)
+- Customizable status page title (independent from dashboard branding)
 - Dark/light theme toggle
 - Recovery key for password recovery
 - Automatic data retention cleanup
@@ -142,6 +146,7 @@ Click "+ Add Site" to add a site to monitor. Each site has:
 - **Interval** — how often to check (in seconds)
 - **Group** — assign to a group for organization
 - **Notifications** — enable/disable webhook alerts per site
+- **Show URL on status page** — when disabled, the site's URL is hidden from the public status page (no link, no URL text)
 
 Sites can be temporarily disabled without deleting them. Disabled sites are skipped during checks.
 
@@ -152,6 +157,10 @@ Groups let you organize sites logically (e.g., Production, Staging), when presen
 ### Status Page
 
 The public status page (`/`) shows a read-only view of all visible sites, organized by group. No login required. It auto-refreshes every 30 seconds.
+
+At the top, an overall status indicator shows system health (Operational, Degraded, Severely Degraded, or Down) alongside uptime percentages for the last 24 hours, 7 days, 30 days, and 90 days. Each group also displays its own 24h average uptime in the header.
+
+The status page title can be customized in Settings (independently from the dashboard, which always shows "Uptime").
 
 Only sites with "visible" enabled appear on the status page.
 

@@ -2,6 +2,15 @@
 
 Session checkpoints for continuity across sessions.
 
+## 2026-08-25
+
+- **Per-site `show_url` toggle**: new `show_url` column on `sites` table (default 1). When disabled, the status page API strips the `url` field from the site response — no link, no URL text displayed publicly. DB migration v3→v4.
+- **Overall uptime section on Status Page**: shows a status indicator (Operational/Degraded/Severely Degraded/Down) with colored icon + a 4-column grid showing uptime percentages for 24h, 7d, 30d, 90d. Responsive: 2x2 grid on mobile (<480px).
+- **Status thresholds**: ≥85% → Operational (green #22c55e), 20–84% → Degraded (amber #f59e0b), 1–19% → Severely Degraded (orange #f97316), 0% → Down (red #ef4444).
+- **Per-group uptime**: group headers in the status page show 24h average uptime percentage (right-aligned).
+- **App Name scoping**: `app_name` setting now only affects the Status Page title/heading. Dashboard and Login always show "Uptime". Settings label renamed to "Status Page Title".
+- Test count: 149 (all passing)
+
 ## 2026-08-19
 
 - Built single-file uptime monitor (`index.php`) with PHP + SQLite
