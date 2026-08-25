@@ -44,3 +44,12 @@ Session checkpoints for continuity across sessions.
 - Auto-update feature: added `check_update` and `apply_update` API actions (Tasssks strategy), `GITHUB_RAW_URL` constant, `setSetting()` helper, `apiAuthStatus()` returns `version` + `update_available`
 - Auto-update UI: topbar amber badge (hidden by default), Settings modal "Updates" section with Check/Apply buttons, `APP_STATUS` global fetched on page load
 - Test count: 100 (all passing)
+
+## 2026-08-26
+
+- Check Logs modal: "Logs" button per site in dashboard opens modal with historical check table (time, status badge, code, response time, message)
+- Period filter: dropdown defaults to "Last 6 hours", supports 1h/6h/24h/7d/30d/All time; `apiListChecks()` now accepts `from`/`to` query params (limit raised to 500)
+- Messages: empty messages show "Success"; non-empty (down events) wrapped in `<code>` tag
+- Action buttons restyled: Logs/Edit/Delete all outlined; blue hover for Logs/Edit, red hover for Delete
+- Modal title format: `"{site name} logs"` (not "Check Logs — ...")
+- Test count: 115 (all passing)
