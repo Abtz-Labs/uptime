@@ -7,6 +7,10 @@ start *args:
     #!/usr/bin/env bash
     port="3030"
     mode="foreground"
+    if [ -f .server.pid ] && kill -0 $(cat .server.pid) 2>/dev/null; then
+        echo "Server already running (PID: $(cat .server.pid))"
+        exit 0
+    fi
     for arg in {{args}}; do
         if [ "$arg" = "background" ]; then
             mode="background"
