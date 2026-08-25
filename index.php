@@ -705,9 +705,20 @@ function serveStatusPage(): void {
             overflow: hidden;
         }
         .group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 1rem;
             font-weight: 600;
             border-bottom: 1px solid var(--border);
+        }
+        .group-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 400;
+            color: var(--text-muted);
         }
         .site {
             display: flex;
@@ -723,10 +734,12 @@ function serveStatusPage(): void {
             border-radius: 50%;
             flex-shrink: 0;
         }
-        .status-dot.up { background: var(--green); }
+        .status-dot.up, .status-dot.operational { background: var(--green); }
         .status-dot.down { background: var(--red); }
         .status-dot.unknown { background: var(--gray); }
         .status-dot.scheduled { background: var(--blue); }
+        .status-dot.degraded { background: #f59e0b; }
+        .status-dot.severely_degraded { background: #f97316; }
         .site-info { flex: 1; min-width: 0; }
         .site-name {
             font-weight: 500;
@@ -770,6 +783,56 @@ function serveStatusPage(): void {
             margin-top: 0.25rem;
         }
         .uptime-pct { font-size: 0.75rem; color: var(--text-muted); text-align: center; }
+        .overall-status {
+            text-align: center;
+            margin: 1rem 0;
+        }
+        .overall-status-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.5rem;
+        }
+        .overall-status-icon.operational { background: var(--green); }
+        .overall-status-icon.degraded { background: #f59e0b; }
+        .overall-status-icon.severely_degraded { background: #f97316; }
+        .overall-status-icon.down { background: var(--red); }
+        .overall-status-icon.unknown { background: var(--gray); }
+        .overall-status-label {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        .overall-uptime {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1px;
+            background: var(--border);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        @media (min-width: 480px) {
+            .overall-uptime { grid-template-columns: repeat(4, 1fr); }
+        }
+        .overall-uptime-cell {
+            background: var(--surface);
+            padding: 0.75rem 0.5rem;
+            text-align: center;
+        }
+        .overall-uptime-value {
+            font-size: 1.125rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .overall-uptime-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
         .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
         .footer {
             text-align: center;
@@ -835,13 +898,55 @@ function serveStatusPage(): void {
 
             let html = '';
 
+            // Overall status indicator + uptime grid
+            const overall = data.overall || {};
+            if (overall.status) {
+                const statusLabels = {
+                    operational: 'Operational',
+                    degraded: 'Degraded',
+                    severely_degraded: 'Severely Degraded',
+                    down: 'Down',
+                    unknown: 'Unknown',
+                };
+                const checkSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                const warnSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+                const xSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+                const icon = overall.status === 'operational' ? checkSvg : (overall.status === 'down' ? xSvg : warnSvg);
+
+                const fmt = (v) => v !== null ? v.toFixed(1) + '%' : '—';
+                html += `
+                    <div class="overall-status">
+                        <div class="overall-status-icon ${overall.status}">${icon}</div>
+                        <div class="overall-status-label">${statusLabels[overall.status]}</div>
+                    </div>
+                    <div class="overall-uptime">
+                        <div class="overall-uptime-cell">
+                            <div class="overall-uptime-value">${fmt(overall.uptime_24h)}</div>
+                            <div class="overall-uptime-label">Last 24 hours</div>
+                        </div>
+                        <div class="overall-uptime-cell">
+                            <div class="overall-uptime-value">${fmt(overall.uptime_7d)}</div>
+                            <div class="overall-uptime-label">Last 7 days</div>
+                        </div>
+                        <div class="overall-uptime-cell">
+                            <div class="overall-uptime-value">${fmt(overall.uptime_30d)}</div>
+                            <div class="overall-uptime-label">Last 30 days</div>
+                        </div>
+                        <div class="overall-uptime-cell">
+                            <div class="overall-uptime-value">${fmt(overall.uptime_90d)}</div>
+                            <div class="overall-uptime-label">Last 90 days</div>
+                        </div>
+                    </div>`;
+            }
+
             // Render grouped sites
             for (const group of groups) {
                 const groupSites = sites.filter(s => s.group_id == group.id);
                 if (groupSites.length === 0) continue;
 
+                const gUptime = group.uptime_24h !== null ? group.uptime_24h.toFixed(1) + '% uptime' : '';
                 html += `<div class="group">`;
-                html += `<div class="group-header">${escapeHtml(group.name)}</div>`;
+                html += `<div class="group-header"><span>${escapeHtml(group.name)}</span><span class="group-meta">${gUptime}</span></div>`;
                 for (const site of groupSites) {
                     html += renderSite(site);
                 }
@@ -3417,8 +3522,64 @@ function apiStatusPage(): void {
         }
         unset($site['show_url']);
     }
+    unset($site);
 
-    jsonResponse(['groups' => $groups, 'sites' => $sites]);
+    // Per-group uptime (24h average of grouped sites)
+    foreach ($groups as &$group) {
+        $groupSiteIds = array_column(array_filter($sites, fn($s) => (int)($s['group_id'] ?? 0) === (int)$group['id']), 'id');
+        $group['uptime_24h'] = null;
+        $group['status'] = 'unknown';
+        if ($groupSiteIds) {
+            $ph = implode(',', array_fill(0, count($groupSiteIds), '?'));
+            $total = $db->prepare("SELECT COUNT(*) as cnt FROM checks WHERE site_id IN ($ph) AND checked_at > datetime('now', '-24 hours')");
+            $total->execute($groupSiteIds);
+            $totalCount = (int) $total->fetch()['cnt'];
+            if ($totalCount > 0) {
+                $up = $db->prepare("SELECT COUNT(*) as cnt FROM checks WHERE site_id IN ($ph) AND status = 'up' AND checked_at > datetime('now', '-24 hours')");
+                $up->execute($groupSiteIds);
+                $pct = round(((int) $up->fetch()['cnt'] / $totalCount) * 100, 1);
+                $group['uptime_24h'] = $pct;
+                if ($pct >= 85) $group['status'] = 'operational';
+                elseif ($pct >= 20) $group['status'] = 'degraded';
+                elseif ($pct >= 1) $group['status'] = 'severely_degraded';
+                else $group['status'] = 'down';
+            }
+        }
+    }
+    unset($group);
+
+    // Overall uptime across multiple time windows
+    $siteIds = array_column($sites, 'id');
+    $overall = ['uptime_24h' => null, 'uptime_7d' => null, 'uptime_30d' => null, 'uptime_90d' => null, 'status' => 'unknown'];
+    if ($siteIds) {
+        $placeholders = implode(',', array_fill(0, count($siteIds), '?'));
+        $windows = ['24h' => '-24 hours', '7d' => '-7 days', '30d' => '-30 days', '90d' => '-90 days'];
+        foreach ($windows as $key => $interval) {
+            $total = $db->prepare("SELECT COUNT(*) as cnt FROM checks WHERE site_id IN ($placeholders) AND checked_at > datetime('now', ?)");
+            $total->execute(array_merge($siteIds, [$interval]));
+            $totalCount = (int) $total->fetch()['cnt'];
+            if ($totalCount > 0) {
+                $up = $db->prepare("SELECT COUNT(*) as cnt FROM checks WHERE site_id IN ($placeholders) AND status = 'up' AND checked_at > datetime('now', ?)");
+                $up->execute(array_merge($siteIds, [$interval]));
+                $overall["uptime_$key"] = round(((int) $up->fetch()['cnt'] / $totalCount) * 100, 3);
+            }
+        }
+
+        $pct = $overall['uptime_24h'];
+        if ($pct === null) {
+            $overall['status'] = 'unknown';
+        } elseif ($pct >= 85) {
+            $overall['status'] = 'operational';
+        } elseif ($pct >= 20) {
+            $overall['status'] = 'degraded';
+        } elseif ($pct >= 1) {
+            $overall['status'] = 'severely_degraded';
+        } else {
+            $overall['status'] = 'down';
+        }
+    }
+
+    jsonResponse(['groups' => $groups, 'sites' => $sites, 'overall' => $overall]);
 }
 
 // ============================================================================

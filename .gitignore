@@ -2,6 +2,7 @@
 *.sqlite3
 *.sqlite
 *.db
+*.sqlite-*
 
 # Server PID file
 .server.pid

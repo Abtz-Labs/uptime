@@ -401,6 +401,127 @@ $statusSite = array_values($visibleSites)[0];
 assert_true(array_key_exists('enabled', $statusSite), 'status_page site includes enabled field');
 assert_eq(1, (int) $statusSite['enabled'], 'visible site is enabled');
 
+// Overall uptime in status page response
+$r = req('status_page');
+assert_true(array_key_exists('overall', $r['body']), 'status_page includes overall');
+$overall = $r['body']['overall'];
+assert_true(array_key_exists('uptime_24h', $overall), 'overall has uptime_24h');
+assert_true(array_key_exists('uptime_7d', $overall), 'overall has uptime_7d');
+assert_true(array_key_exists('uptime_30d', $overall), 'overall has uptime_30d');
+assert_true(array_key_exists('uptime_90d', $overall), 'overall has uptime_90d');
+assert_true(array_key_exists('status', $overall), 'overall has status');
+assert_true(in_array($overall['status'], ['operational', 'degraded', 'severely_degraded', 'down', 'unknown']), 'overall status is valid');
+assert_true(is_numeric($overall['uptime_24h']) || $overall['uptime_24h'] === null, 'uptime_24h is numeric or null');
+
+// Group uptime in status page response
+$r = req('status_page');
+$groups = $r['body']['groups'] ?? [];
+$groupWithSites = array_values(array_filter($groups, fn($g) => $g['id'] == $groupId));
+if (count($groupWithSites) > 0) {
+    $group = $groupWithSites[0];
+    assert_true(array_key_exists('uptime_24h', $group), 'group includes uptime_24h');
+    assert_true(array_key_exists('status', $group), 'group includes status');
+    assert_true(in_array($group['status'], ['operational', 'degraded', 'severely_degraded', 'down', 'unknown']), 'group status is valid');
+    assert_true(is_numeric($group['uptime_24h']) || $group['uptime_24h'] === null, 'group uptime_24h is numeric or null');
+}
+
+// ─── STATUS THRESHOLDS ──────────────────────────────────
+section('Status Thresholds');
+
+// Connect directly to test DB to insert synthetic check data
+$testDb = new PDO('sqlite:' . $TEST_DB, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+
+// Create a dedicated group and sites for threshold tests
+$r = req('create_group', ['name' => 'Threshold Group'], 'POST', $adminCsrf);
+$thresholdGroupId = $r['body']['id'];
+
+// Helper: create a site and insert checks with a given up ratio
+function createSiteWithUptime(string $name, int $groupId, float $upRatio, string $csrf): int {
+    global $testDb, $adminCsrf;
+    $r = req('create_site', ['name' => $name, 'url' => "https://$name.test", 'group_id' => $groupId], 'POST', $csrf);
+    $id = $r['body']['id'];
+
+    // Insert 100 checks in the last 24 hours
+    $upCount = (int) round($upRatio * 100);
+    $now = time();
+    for ($i = 0; $i < 100; $i++) {
+        $status = $i < $upCount ? 'up' : 'down';
+        $checkedAt = date('Y-m-d H:i:s', $now - ($i * 60)); // every minute going back
+        $testDb->prepare("INSERT INTO checks (site_id, status, status_code, response_time, checked_at) VALUES (?, ?, ?, ?, ?)")
+            ->execute([$id, $status, $status === 'up' ? 200 : 503, 100, $checkedAt]);
+    }
+    return $id;
+}
+
+// Test: 100% up → operational (≥85%)
+$opSiteId = createSiteWithUptime('operational-site', $thresholdGroupId, 1.0, $adminCsrf);
+$r = req('status_page');
+$overall = $r['body']['overall'];
+assert_eq('operational', $overall['status'], 'overall status is operational at 100% uptime');
+
+// Verify group status too
+$groups = $r['body']['groups'];
+$tg = array_values(array_filter($groups, fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('operational', $tg['status'], 'group status is operational at 100% uptime');
+
+// Clean up and test: 50% up → degraded (20-84%)
+req('delete_site', ['id' => $opSiteId], 'POST', $adminCsrf);
+$degSiteId = createSiteWithUptime('degraded-site', $thresholdGroupId, 0.5, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('degraded', $tg['status'], 'group status is degraded at 50% uptime');
+
+// Also check overall (this is now the only visible site besides $siteId which has real checks)
+// We test overall by making this the only site (hide the other)
+req('update_site', ['id' => $siteId, 'visible' => 0], 'POST', $adminCsrf);
+$r = req('status_page');
+assert_eq('degraded', $r['body']['overall']['status'], 'overall status is degraded at 50% uptime');
+
+// Clean up and test: 10% up → severely_degraded (1-19%)
+req('delete_site', ['id' => $degSiteId], 'POST', $adminCsrf);
+$sevSiteId = createSiteWithUptime('severe-site', $thresholdGroupId, 0.10, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('severely_degraded', $tg['status'], 'group status is severely_degraded at 10% uptime');
+assert_eq('severely_degraded', $r['body']['overall']['status'], 'overall status is severely_degraded at 10% uptime');
+
+// Clean up and test: 0% up → down
+req('delete_site', ['id' => $sevSiteId], 'POST', $adminCsrf);
+$downSiteId = createSiteWithUptime('down-site', $thresholdGroupId, 0.0, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('down', $tg['status'], 'group status is down at 0% uptime');
+assert_eq('down', $r['body']['overall']['status'], 'overall status is down at 0% uptime');
+
+// Test boundary: exactly 85% → operational
+req('delete_site', ['id' => $downSiteId], 'POST', $adminCsrf);
+$boundarySiteId = createSiteWithUptime('boundary-site', $thresholdGroupId, 0.85, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('operational', $tg['status'], 'group status is operational at exactly 85% uptime');
+
+// Test boundary: exactly 20% → degraded
+req('delete_site', ['id' => $boundarySiteId], 'POST', $adminCsrf);
+$boundary2SiteId = createSiteWithUptime('boundary2-site', $thresholdGroupId, 0.20, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('degraded', $tg['status'], 'group status is degraded at exactly 20% uptime');
+
+// Test boundary: exactly 1% → severely_degraded
+req('delete_site', ['id' => $boundary2SiteId], 'POST', $adminCsrf);
+$boundary3SiteId = createSiteWithUptime('boundary3-site', $thresholdGroupId, 0.01, $adminCsrf);
+$r = req('status_page');
+$tg = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $thresholdGroupId))[0] ?? [];
+assert_eq('severely_degraded', $tg['status'], 'group status is severely_degraded at exactly 1% uptime');
+
+// Clean up threshold tests
+req('delete_site', ['id' => $boundary3SiteId], 'POST', $adminCsrf);
+req('delete_group', ['id' => $thresholdGroupId], 'POST', $adminCsrf);
+req('update_site', ['id' => $siteId, 'visible' => 1], 'POST', $adminCsrf);
+
+// ─── SHOW URL PER-SITE ─────────────────────────────────
+section('Show URL Per-Site');
+
 // show_url per-site — ON by default
 $r = req('status_page');
 $statusSite = $r['body']['sites'][0] ?? [];
