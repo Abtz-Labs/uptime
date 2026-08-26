@@ -62,3 +62,12 @@ Session checkpoints for continuity across sessions.
 - Action buttons restyled: Logs/Edit/Delete all outlined; blue hover for Logs/Edit, red hover for Delete
 - Modal title format: `"{site name} logs"` (not "Check Logs — ...")
 - Test count: 115 (all passing)
+
+## 2026-08-27
+
+- **Telegram webhook integration**: Bot Token, Chat ID, Message Template fields; auto-constructs `https://api.telegram.org/bot<TOKEN>/sendMessage`; template supports `{{event}}`, `{{site_name}}`, `{{url}}`, `{{message}}`, `{{timestamp}}`; falls back to raw JSON if no template
+- **Slack webhook improvements**: Message Template support with same placeholders; URL placeholder shows example format; help hint links to https://api.slack.com/apps
+- **Form UX**: Type field moved first (was URL → Type → Events); URL field hidden for Telegram (auto-constructed); conditional fields per type
+- **DB migration v5→v6**: `bot_token`, `chat_id`, `message_template` columns on `webhooks` table
+- **Backend**: `formatWebhookPayload()` processes templates for both Slack and Telegram; `sendNotifications()` overrides URL for Telegram; `sendWebhook()` simplified (removed unused `$type` param)
+- **Tests**: 15 new test cases for Telegram webhook validation; total 187 (all passing)

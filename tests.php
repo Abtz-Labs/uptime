@@ -372,6 +372,95 @@ assert_eq(0, count($r['body']), 'webhooks cascade-deleted with site');
 $r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
 assert_eq(1, count($r['body']), 'other site webhooks unaffected');
 
+// ─── TELEGRAM WEBHOOKS ──────────────────────────────────
+section('Telegram Webhooks');
+
+// Create Telegram webhook with valid bot_token and chat_id
+$r = req('create_webhook', [
+    'url' => '',
+    'type' => 'telegram',
+    'site_id' => $siteId,
+    'bot_token' => '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
+    'chat_id' => '-1001234567890',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create telegram webhook succeeds');
+$telegramWebhookId = $r['body']['id'];
+
+// Telegram webhook does NOT require URL (auto-constructed)
+$r = req('create_webhook', [
+    'type' => 'telegram',
+    'site_id' => $siteId,
+    'bot_token' => '111111:AAA-BBB',
+    'chat_id' => '12345',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'telegram webhook without URL succeeds');
+$telegramNoUrlId = $r['body']['id'];
+
+// Create Telegram webhook WITHOUT bot_token → 400
+$r = req('create_webhook', [
+    'url' => '',
+    'type' => 'telegram',
+    'site_id' => $siteId,
+    'chat_id' => '12345',
+], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'telegram without bot_token rejected');
+
+// Create Telegram webhook WITHOUT chat_id → 400
+$r = req('create_webhook', [
+    'url' => '',
+    'type' => 'telegram',
+    'site_id' => $siteId,
+    'bot_token' => '123456:ABC-DEF',
+], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'telegram without chat_id rejected');
+
+// Create Telegram webhook with message_template
+$r = req('create_webhook', [
+    'url' => '',
+    'type' => 'telegram',
+    'site_id' => $siteId,
+    'bot_token' => '999999:XYZ-TEMPLATE',
+    'chat_id' => '-100999999',
+    'message_template' => '{{event}}: {{site_name}} is {{message}} ({{url}})',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create telegram webhook with template succeeds');
+$telegramTemplateId = $r['body']['id'];
+
+// List webhooks — verify new fields present
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'list webhooks returns 200');
+$telegramHooks = array_filter($r['body'], fn($h) => $h['type'] === 'telegram');
+assert_true(count($telegramHooks) >= 3, 'at least 3 telegram webhooks');
+$firstTelegram = array_values($telegramHooks)[0];
+assert_true(array_key_exists('bot_token', $firstTelegram), 'response includes bot_token');
+assert_true(array_key_exists('chat_id', $firstTelegram), 'response includes chat_id');
+assert_true(array_key_exists('message_template', $firstTelegram), 'response includes message_template');
+
+// Update webhook with new fields
+$r = req('update_webhook', [
+    'id' => $telegramWebhookId,
+    'bot_token' => '000000:UPDATED-TOKEN',
+    'chat_id' => '-1000000',
+    'message_template' => '🔔 {{event}} on {{site_name}}',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update telegram webhook succeeds');
+
+// Verify update persisted
+$r = req('list_webhooks', ['site_id' => $siteId], 'POST', $adminCsrf);
+$updated = array_values(array_filter($r['body'], fn($h) => $h['id'] == $telegramWebhookId))[0];
+assert_eq('000000:UPDATED-TOKEN', $updated['bot_token'], 'bot_token updated');
+assert_eq('-1000000', $updated['chat_id'], 'chat_id updated');
+assert_eq('🔔 {{event}} on {{site_name}}', $updated['message_template'], 'message_template updated');
+
+// Test Telegram webhook (should attempt POST to api.telegram.org)
+$r = req('test_webhook', ['id' => $telegramWebhookId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'test telegram webhook returns 200');
+
+// Cleanup telegram webhooks
+req('delete_webhook', ['id' => $telegramWebhookId], 'POST', $adminCsrf);
+req('delete_webhook', ['id' => $telegramNoUrlId], 'POST', $adminCsrf);
+req('delete_webhook', ['id' => $telegramTemplateId], 'POST', $adminCsrf);
+
 // ─── STATUS PAGE ────────────────────────────────────────
 section('Status Page');
 

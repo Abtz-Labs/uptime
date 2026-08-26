@@ -171,7 +171,21 @@ function migrateDatabase(PDO $db): void {
         }
     }
 
-    $db->exec('PRAGMA user_version = 5');
+    // Version 5 → 6: Telegram fields on webhooks
+    if ($version < 6) {
+        $cols = $db->query("PRAGMA table_info(webhooks)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('bot_token', $cols)) {
+            $db->exec("ALTER TABLE webhooks ADD COLUMN bot_token TEXT");
+        }
+        if (!in_array('chat_id', $cols)) {
+            $db->exec("ALTER TABLE webhooks ADD COLUMN chat_id TEXT");
+        }
+        if (!in_array('message_template', $cols)) {
+            $db->exec("ALTER TABLE webhooks ADD COLUMN message_template TEXT");
+        }
+    }
+
+    $db->exec('PRAGMA user_version = 6');
 }
 
 function rotateRecoveryKey(int $userId): string {
@@ -338,33 +352,48 @@ function sendNotifications(int $siteId, string $event, string $siteName, string 
         $events = array_map('trim', explode(',', $hook['events']));
         if (!in_array($event, $events)) continue;
 
-        $body = formatWebhookPayload($hook['type'], $event, $siteName, $siteUrl, $message);
-        sendWebhook($hook['url'], $body, $hook['type']);
+        $body = formatWebhookPayload($hook['type'], $event, $siteName, $siteUrl, $message, $hook['bot_token'] ?? null, $hook['chat_id'] ?? null, $hook['message_template'] ?? null);
+        $url = $hook['type'] === 'telegram' && !empty($hook['bot_token'])
+            ? "https://api.telegram.org/bot{$hook['bot_token']}/sendMessage"
+            : $hook['url'];
+        sendWebhook($url, $body);
     }
 
     // Update last_notified_at
     $db->prepare("UPDATE site_status SET last_notified_at = datetime('now') WHERE site_id = ?")->execute([$siteId]);
 }
 
-function formatWebhookPayload(string $hookType, string $event, string $siteName, string $siteUrl, ?string $message): string {
-    $emoji = $event === 'down' ? '🔴' : '🟢';
-    $text = "$emoji Website $event: $siteName ($siteUrl)";
-    if ($message) $text .= "\n$message";
+function formatWebhookPayload(string $hookType, string $event, string $siteName, string $siteUrl, ?string $message, ?string $botToken = null, ?string $chatId = null, ?string $messageTemplate = null): string {
+    $genericPayload = json_encode([
+        'event' => $event,
+        'site' => $siteName,
+        'url' => $siteUrl,
+        'message' => $message,
+        'timestamp' => date('c'),
+    ]);
+
+    $replaceTemplate = fn(?string $tpl) => $tpl
+        ? str_replace(
+            ['{{event}}', '{{site_name}}', '{{url}}', '{{message}}', '{{timestamp}}'],
+            [$event, $siteName, $siteUrl, $message ?? '', date('c')],
+            $tpl
+        )
+        : "$event: $siteName is $message ($siteUrl)";
 
     return match ($hookType) {
-        'slack' => json_encode(['text' => $text]),
-        'telegram' => json_encode(['text' => $text, 'parse_mode' => 'HTML']),
-        default => json_encode([
-            'event' => $event,
-            'site' => $siteName,
-            'url' => $siteUrl,
-            'message' => $message,
-            'timestamp' => date('c'),
-        ]),
+        'slack' => json_encode(['text' => $replaceTemplate($messageTemplate)]),
+        'telegram' => $chatId
+            ? json_encode([
+                'chat_id' => $chatId,
+                'text' => $replaceTemplate($messageTemplate),
+                'parse_mode' => 'MarkdownV2',
+            ])
+            : $genericPayload,
+        default => $genericPayload,
     };
 }
 
-function sendWebhook(string $url, string $body, string $type): void {
+function sendWebhook(string $url, string $body): void {
     $headers = ['Content-Type: application/json'];
     $ctx = stream_context_create(['http' => [
         'method' => 'POST',
@@ -1704,7 +1733,7 @@ function serveDashboard(): void {
         .modal h3 { margin-bottom: 1rem; }
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; }
-        .form-group input, .form-group select {
+        .form-group input, .form-group select, .form-group textarea {
             width: 100%;
             padding: 0.5rem 0.75rem;
             border: 1px solid var(--border);
@@ -1712,8 +1741,10 @@ function serveDashboard(): void {
             background: var(--bg);
             color: var(--text);
             font-size: 1rem;
+            font-family: inherit;
         }
-        .form-group input:focus, .form-group select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+        .form-group-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
         .checkbox-group {
             display: flex;
             align-items: center;
@@ -2160,16 +2191,40 @@ just stop-cron     # stop background cron</pre>
                 <div id="site-webhooks-list"></div>
                 <div id="site-webhook-form" class="webhook-form hidden">
                     <div class="form-group">
-                        <label for="site-webhook-url">URL</label>
-                        <input type="url" id="site-webhook-url" required placeholder="https://hooks.slack.com/...">
-                    </div>
-                    <div class="form-group">
                         <label for="site-webhook-type">Type</label>
-                        <select id="site-webhook-type">
+                        <select id="site-webhook-type" onchange="togglePresetFields()">
                             <option value="generic">Generic JSON</option>
                             <option value="slack">Slack</option>
                             <option value="telegram">Telegram</option>
                         </select>
+                    </div>
+                    <div class="form-group" id="site-webhook-url-group">
+                        <label for="site-webhook-url">URL</label>
+                        <input type="url" id="site-webhook-url">
+                        <div class="form-group-hint" id="slack-hint" style="display:none">Create a webhook at <a href="https://api.slack.com/apps" target="_blank" rel="noopener">https://api.slack.com/apps</a></div>
+                    </div>
+                    <div id="telegram-fields" class="hidden">
+                        <div class="form-group">
+                            <label for="site-webhook-bot-token">Bot Token</label>
+                            <input type="text" id="site-webhook-bot-token" placeholder="123456:ABC-DEF...">
+                            <div class="form-group-hint">Get a token from <a href="https://t.me/BotFather" target="_blank" rel="noopener">https://t.me/BotFather</a></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="site-webhook-chat-id">Chat ID</label>
+                            <input type="text" id="site-webhook-chat-id" placeholder="-1001234567890">
+                        </div>
+                        <div class="form-group">
+                            <label for="site-webhook-message-template">Message Template <span style="opacity:0.5">(optional)</span></label>
+                            <textarea id="site-webhook-message-template" rows="3" placeholder="{{event}}: {{site_name}} is {{message}}"></textarea>
+                            <div class="form-group-hint">Supports {{event}}, {{site_name}}, {{url}}, {{message}}, {{timestamp}}</div>
+                        </div>
+                    </div>
+                    <div id="slack-template" class="hidden">
+                        <div class="form-group">
+                            <label for="site-webhook-slack-template">Message Template <span style="opacity:0.5">(optional)</span></label>
+                            <textarea id="site-webhook-slack-template" rows="3" placeholder="*{{event}}*: {{site_name}} is {{message}}"></textarea>
+                            <div class="form-group-hint">Supports {{event}}, {{site_name}}, {{url}}, {{message}}, {{timestamp}}</div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Events</label>
@@ -2598,10 +2653,11 @@ just stop-cron     # stop background cron</pre>
             }
             let html = '';
             for (const h of webhooks) {
+                const displayUrl = h.type === 'telegram' ? `Chat: ${escapeHtml(h.chat_id || '')}` : escapeHtml(h.url);
                 html += `<div class="webhook-item">
                     <div class="webhook-item-info">
                         <span class="webhook-item-type">${escapeHtml(h.type)}</span>
-                        <span class="webhook-item-url">${escapeHtml(h.url)}</span>
+                        <span class="webhook-item-url">${displayUrl}</span>
                         <span class="webhook-item-events">${escapeHtml(h.events)}</span>
                     </div>
                     <div class="webhook-item-actions">
@@ -2620,8 +2676,33 @@ just stop-cron     # stop background cron</pre>
             if (!isOpen) {
                 document.getElementById('site-webhook-url').value = '';
                 document.getElementById('site-webhook-type').value = 'generic';
+                document.getElementById('site-webhook-bot-token').value = '';
+                document.getElementById('site-webhook-chat-id').value = '';
+                document.getElementById('site-webhook-message-template').value = '';
+                document.getElementById('site-webhook-slack-template').value = '';
                 document.getElementById('site-webhook-event-down').checked = true;
                 document.getElementById('site-webhook-event-recover').checked = true;
+                togglePresetFields();
+            }
+        }
+
+        function togglePresetFields() {
+            const type = document.getElementById('site-webhook-type').value;
+            const telegramFields = document.getElementById('telegram-fields');
+            const slackTemplate = document.getElementById('slack-template');
+            const urlGroup = document.getElementById('site-webhook-url-group');
+            const urlInput = document.getElementById('site-webhook-url');
+            const slackHint = document.getElementById('slack-hint');
+
+            telegramFields.classList.toggle('hidden', type !== 'telegram');
+            slackTemplate.classList.toggle('hidden', type !== 'slack');
+            slackHint.style.display = type === 'slack' ? '' : 'none';
+            urlGroup.classList.toggle('hidden', type === 'telegram');
+
+            if (type === 'slack') {
+                urlInput.placeholder = 'https://hooks.slack.com/services/T00000000/B00000000/XXXX';
+            } else if (type === 'generic') {
+                urlInput.placeholder = 'https://example.com/webhook';
             }
         }
 
@@ -2631,12 +2712,22 @@ just stop-cron     # stop background cron</pre>
             const events = [];
             if (document.getElementById('site-webhook-event-down').checked) events.push('down');
             if (document.getElementById('site-webhook-event-recover').checked) events.push('recover');
+            const type = document.getElementById('site-webhook-type').value;
             const data = {
                 site_id: parseInt(siteId),
-                url: document.getElementById('site-webhook-url').value,
-                type: document.getElementById('site-webhook-type').value,
+                type: type,
                 events: events.join(','),
             };
+            if (type === 'telegram') {
+                data.bot_token = document.getElementById('site-webhook-bot-token').value;
+                data.chat_id = document.getElementById('site-webhook-chat-id').value;
+                data.message_template = document.getElementById('site-webhook-message-template').value;
+            } else {
+                data.url = document.getElementById('site-webhook-url').value;
+                if (type === 'slack') {
+                    data.message_template = document.getElementById('site-webhook-slack-template').value;
+                }
+            }
             await api('create_webhook', data, 'POST');
             toggleWebhookForm();
             loadSiteWebhooks(siteId);
@@ -3463,11 +3554,21 @@ function apiCreateWebhook(): void {
     $url = trim($input['url'] ?? '');
     $type = $input['type'] ?? 'generic';
     $siteId = (int) ($input['site_id'] ?? 0);
+    $botToken = trim($input['bot_token'] ?? '');
+    $chatId = trim($input['chat_id'] ?? '');
+    $messageTemplate = $input['message_template'] ?? null;
 
     if (!$siteId) jsonResponse(['error' => 'Missing site_id'], 400);
-    if (!$url) jsonResponse(['error' => 'URL is required'], 400);
-    if (!filter_var($url, FILTER_VALIDATE_URL)) jsonResponse(['error' => 'Invalid URL'], 400);
     if (!in_array($type, ['slack', 'telegram', 'generic'])) jsonResponse(['error' => 'Invalid type'], 400);
+
+    if ($type === 'telegram') {
+        if (!$botToken) jsonResponse(['error' => 'Bot token is required for Telegram'], 400);
+        if (!$chatId) jsonResponse(['error' => 'Chat ID is required for Telegram'], 400);
+        $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
+    } else {
+        if (!$url) jsonResponse(['error' => 'URL is required'], 400);
+        if (!filter_var($url, FILTER_VALIDATE_URL)) jsonResponse(['error' => 'Invalid URL'], 400);
+    }
 
     $db = getDb();
     // Verify site exists
@@ -3475,7 +3576,7 @@ function apiCreateWebhook(): void {
     $check->execute([$siteId]);
     if (!$check->fetch()) jsonResponse(['error' => 'Site not found'], 404);
 
-    $db->prepare("INSERT INTO webhooks (site_id, url, type, events) VALUES (?, ?, ?, ?)")->execute([$siteId, $url, $type, $input['events'] ?? 'down,recover']);
+    $db->prepare("INSERT INTO webhooks (site_id, url, type, events, bot_token, chat_id, message_template) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$siteId, $url, $type, $input['events'] ?? 'down,recover', $botToken ?: null, $chatId ?: null, $messageTemplate]);
     jsonResponse(['id' => (int) $db->lastInsertId()]);
 }
 
@@ -3493,6 +3594,9 @@ function apiUpdateWebhook(): void {
     if (isset($input['type'])) { $fields[] = 'type = ?'; $params[] = $input['type']; }
     if (isset($input['events'])) { $fields[] = 'events = ?'; $params[] = $input['events']; }
     if (isset($input['enabled'])) { $fields[] = 'enabled = ?'; $params[] = (int) $input['enabled']; }
+    if (array_key_exists('bot_token', $input)) { $fields[] = 'bot_token = ?'; $params[] = $input['bot_token'] ?: null; }
+    if (array_key_exists('chat_id', $input)) { $fields[] = 'chat_id = ?'; $params[] = $input['chat_id'] ?: null; }
+    if (array_key_exists('message_template', $input)) { $fields[] = 'message_template = ?'; $params[] = $input['message_template'] ?: null; }
 
     if (!$fields) jsonResponse(['error' => 'No fields to update'], 400);
 
@@ -3524,8 +3628,11 @@ function apiTestWebhook(): void {
     $webhook = $hook->fetch();
     if (!$webhook) jsonResponse(['error' => 'Webhook not found'], 404);
 
-    $body = formatWebhookPayload($webhook['type'], 'test', 'Test Website', 'https://example.com', 'This is a test notification');
-    sendWebhook($webhook['url'], $body, $webhook['type']);
+    $body = formatWebhookPayload($webhook['type'], 'test', 'Test Website', 'https://example.com', 'This is a test notification', $webhook['bot_token'] ?? null, $webhook['chat_id'] ?? null, $webhook['message_template'] ?? null);
+    $url = $webhook['type'] === 'telegram' && !empty($webhook['bot_token'])
+        ? "https://api.telegram.org/bot{$webhook['bot_token']}/sendMessage"
+        : $webhook['url'];
+    sendWebhook($url, $body);
     jsonResponse(['ok' => true]);
 }
 
