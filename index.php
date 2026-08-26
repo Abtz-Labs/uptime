@@ -2648,8 +2648,8 @@ just stop-cron     # stop background cron</pre>
                     <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
                     <td>${escapeHtml(group.name)}</td>
                     <td>
-                        <button class="btn btn-sm" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}', ${group.position ?? 0})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteGroup(${group.id}, '${escapeHtml(group.name)}')">Delete</button>
+                        <button class="btn btn-sm btn-outlined" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}', ${group.position ?? 0})">Edit</button>
+                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteGroup(${group.id}, '${escapeHtml(group.name)}')">Delete</button>
                     </td>
                 </tr>`;
             }
