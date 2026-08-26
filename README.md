@@ -12,12 +12,12 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 
 ## Features
 
-- Monitor unlimited sites with configurable check intervals
-- Status page with timeline bars (green/grey/red) per site
+- Monitor unlimited websites with configurable check intervals
+- Status page with timeline bars (green/grey/red) per website
 - Overall uptime indicator (Operational/Degraded/Severely Degraded/Down) with 24h/7d/30d/90d breakdown
 - Per-group uptime averages on the status page
 - Per-site URL visibility toggle (hide URLs from the public status page)
-- Drag-and-drop group and site reordering
+- Drag-and-drop group and website reordering
 - Webhook notifications (Slack, Telegram, generic JSON)
 - Public status page (no login required)
 - Customizable status page title (independent from dashboard branding)
@@ -80,7 +80,7 @@ php -S localhost:3030 index.php
 
 ### Scheduled Checks
 
-Site checks are triggered by an external cron job. The cron calls the `run_checks` endpoint, which respects each site's configured interval — only sites that are due get checked. You can safely call it every minute without wasted work.
+Website checks are triggered by an external cron job. The cron calls the `run_checks` endpoint, which respects each website's configured interval — only websites that are due get checked. You can safely call it every minute without wasted work.
 
 #### Development
 
@@ -108,7 +108,7 @@ Add these lines:
 0 3 * * * curl -sf "https://your-host/?action=cleanup_checks&token=YOUR_TOKEN"
 ```
 
-The first line runs site checks every minute. The second runs data retention cleanup daily at 3 AM (removes check records older than the configured retention period).
+The first line runs website checks every minute. The second runs data retention cleanup daily at 3 AM (removes check records older than the configured retention period).
 
 Replace `https://your-host` with your actual URL and `YOUR_TOKEN` with the cron token generated in Settings → Automation. The `-sf` flags silence output and fail silently on HTTP errors.
 
@@ -124,35 +124,35 @@ On first access, Uptime shows a setup screen. Create your admin account (name, e
 
 ### Dashboard
 
-Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. The dashboard shows all sites with:
+Navigate to `/dash` (e.g., `http://localhost:3030/dash`) to access the admin dashboard. The dashboard shows all websites with:
 
 - Current status (green dot = up, red = down, blue = scheduled, grey = unknown/disabled)
 - Response time of the last check
 - 24h uptime percentage
 - Timeline bar showing recent check history
 
-The sites list auto-refreshes every 30 seconds.
+The websites list auto-refreshes every 30 seconds.
 
-### Sites
+### Websites
 
-Click "+ Add Site" to add a site to monitor. Each site has:
+Click "+ Add Website" to add a website to monitor. Each website has:
 
 - **Name** — a display label
 - **URL** — the endpoint to check
 - **Method** — GET or HEAD
 - **Expected status** — HTTP status code to consider "up" (default: 200)
-- **Expected keyword** — optional plain text to look for in the response body (case-insensitive substring match). If the text is not found, the site is marked as down. Examples: `Welcome`, `OK`, `"status":"healthy"`. Does not support regex. Disabled for HEAD method (no body is returned).
+- **Expected keyword** — optional plain text to look for in the response body (case-insensitive substring match). If the text is not found, the website is marked as down. Examples: `Welcome`, `OK`, `"status":"healthy"`. Does not support regex. Disabled for HEAD method (no body is returned).
 - **Timeout** — maximum seconds to wait for a response
 - **Interval** — how often to check (in seconds)
 - **Group** — assign to a group for organization
-- **Notifications** — enable/disable webhook alerts per site
-- **Show URL on status page** — when disabled, the site's URL is hidden from the public status page (no link, no URL text)
+- **Notifications** — enable/disable webhook alerts per website
+- **Show URL on status page** — when disabled, the website's URL is hidden from the public status page (no link, no URL text)
 
-Sites can be temporarily disabled without deleting them. Disabled sites are skipped during checks.
+Websites can be temporarily disabled without deleting them. Disabled websites are skipped during checks.
 
 ### Groups
 
-Groups let you organize sites logically (e.g., Production, Staging), when presenting them in the Status Page. Drag the `⠿` handle to reorder groups. Sites can be assigned to a group via the site edit modal.
+Groups let you organize websites logically (e.g., Production, Staging), when presenting them in the Status Page. Drag the `⠿` handle to reorder groups. Websites can be assigned to a group via the website edit modal.
 
 ### Status Page
 
@@ -166,9 +166,9 @@ Only sites with "visible" enabled appear on the status page.
 
 ### Notifications
 
-**Webhooks** are configured per site (site edit modal, Webhooks tab). Supported types: Slack (Incoming Webhook), Telegram (Bot API), and generic JSON POST. You can test webhooks before saving.
+**Webhooks** are configured per website (website edit modal, Webhooks tab). Supported types: Slack (Incoming Webhook), Telegram (Bot API), and generic JSON POST. You can test webhooks before saving.
 
-Webhook notifications include a 5-minute spam cooldown per site to avoid alert floods.
+Webhook notifications include a 5-minute spam cooldown per website to avoid alert floods.
 
 **Generic JSON payload example:**
 
@@ -186,7 +186,7 @@ Webhook notifications include a 5-minute spam cooldown per site to avoid alert f
 
 ### User-Agent
 
-Uptime identifies itself when checking sites using the User-Agent header: `AbtzUptimeCrawler/1.0.0`. You can whitelist this in your firewall or server configuration if needed.
+Uptime identifies itself when checking websites using the User-Agent header: `AbtzUptimeCrawler/1.0.0`. You can whitelist this in your firewall or server configuration if needed.
 
 ### Recovery Key
 
@@ -202,7 +202,7 @@ Check history is retained for 180 days by default (configurable in App Settings)
 
 | Shortcut | Action |
 |----------|--------|
-| `S` | Sites |
+| `S` | Websites |
 | `G` | Groups |
 | `A` | Account |
 | `⌘ ,` | App Settings |

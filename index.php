@@ -348,7 +348,7 @@ function sendNotifications(int $siteId, string $event, string $siteName, string 
 
 function formatWebhookPayload(string $hookType, string $event, string $siteName, string $siteUrl, ?string $message): string {
     $emoji = $event === 'down' ? '🔴' : '🟢';
-    $text = "$emoji Site $event: $siteName ($siteUrl)";
+    $text = "$emoji Website $event: $siteName ($siteUrl)";
     if ($message) $text .= "\n$message";
 
     return match ($hookType) {
@@ -1831,8 +1831,8 @@ function serveDashboard(): void {
         <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:0.375rem"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><?= APP_NAME ?><span class="update-badge" id="update-badge" onclick="showSettingsModal()" title="Update available"></span></h1>
         <div class="topbar-right">
             <nav class="nav-links" id="nav-links">
-                <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
-                <button onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+                <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
+                <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
                 <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             </nav>
             <div class="user-dropdown">
@@ -1857,8 +1857,8 @@ function serveDashboard(): void {
             </button>
         </div>
         <nav class="mobile-menu" id="mobile-menu">
-            <button class="active" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Sites</button>
-            <button onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+            <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
+            <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
             <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             <hr>
             <button onclick="showAccountModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Account</button>
@@ -1870,8 +1870,8 @@ function serveDashboard(): void {
         <!-- Sites Section -->
         <div id="sites" class="section active">
             <div class="section-header">
-                <h2>Sites</h2>
-                <button class="btn" onclick="showSiteModal()">+ Add Site</button>
+                <h2>Monitored Websites</h2>
+                <button class="btn" onclick="showSiteModal()">+ Add Website</button>
             </div>
             <div id="sites-list"><div class="empty">Loading...</div></div>
         </div>
@@ -1980,8 +1980,8 @@ function serveDashboard(): void {
             <h3>Help</h3>
             <div class="help-content">
                 <div class="help-section">
-                    <h4>Sites</h4>
-                    <p>Add websites to monitor by clicking <strong>+ Add Site</strong>. Each site can be configured with a check interval, expected status code, keyword matching, and notification settings. Sites can be temporarily disabled without deletion.</p>
+                    <h4>Websites</h4>
+                    <p>Add websites to monitor by clicking <strong>+ Add Website</strong>. Each website can be configured with a check interval, expected status code, keyword matching, and notification settings. Websites can be temporarily disabled without deletion.</p>
                 </div>
                 <div class="help-section">
                     <h4>Groups</h4>
@@ -2005,7 +2005,7 @@ function serveDashboard(): void {
                 </div>
                 <div class="help-section">
                     <h4>Scheduled Checks</h4>
-                    <p>Site checks are triggered by an external cron job. The cron calls the <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">run_checks</code> endpoint, which respects each site's configured interval — only sites that are due get checked.</p>
+                    <p>Website checks are triggered by an external cron job. The cron calls the <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">run_checks</code> endpoint, which respects each website's configured interval — only websites that are due get checked.</p>
                     <p style="margin-top:0.5rem">Generate a <strong>Cron Token</strong> in Settings → Automation to protect these endpoints from unauthorized access. Once set, the token is required as a <code style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:0.125rem 0.375rem">?token=...</code> query parameter.</p>
                     <p style="margin-top:0.5rem"><strong>Production (system cron):</strong></p>
                     <pre style="font-size:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem;overflow-x:auto;margin-top:0.25rem">* * * * * curl -sf "https://your-host/?action=run_checks&token=YOUR_TOKEN"
@@ -2027,7 +2027,7 @@ just stop-cron     # stop background cron</pre>
                 <div class="help-section">
                     <h4>Keyboard Shortcuts</h4>
                     <table class="help-table">
-                        <tr><td><kbd>S</kbd></td><td>Sites</td></tr>
+                        <tr><td><kbd>S</kbd></td><td>Websites</td></tr>
                         <tr><td><kbd>G</kbd></td><td>Groups</td></tr>
                         <tr><td><kbd>A</kbd></td><td>Account</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>,</kbd></td><td>App Settings</td></tr>
@@ -2078,10 +2078,10 @@ just stop-cron     # stop background cron</pre>
         </div>
     </div>
 
-    <!-- Site Modal -->
+    <!-- Website Modal -->
     <div class="modal-overlay" id="site-modal">
         <div class="modal">
-            <h3 id="site-modal-title">Add Site</h3>
+            <h3 id="site-modal-title">Add Website</h3>
             <div class="modal-tabs" id="site-modal-tabs">
                 <button class="active" onclick="switchSiteTab('site')">Site</button>
                 <button id="site-modal-webhooks-tab" class="hidden" onclick="switchSiteTab('webhooks')">Webhooks</button>
@@ -2112,7 +2112,7 @@ just stop-cron     # stop background cron</pre>
                     <div class="form-group">
                         <label for="site-expected-keyword">Expected Keyword (optional)</label>
                         <input type="text" id="site-expected-keyword" placeholder="e.g. &quot;Welcome&quot; or &quot;OK&quot;">
-                        <small style="color:var(--text-muted);margin-top:0.25rem;display:block">Case-insensitive plain text searched in the response body. Site is marked down if the text is not found. Does not support regex. Disabled for HEAD method (no body returned).</small>
+                        <small style="color:var(--text-muted);margin-top:0.25rem;display:block">Case-insensitive plain text searched in the response body. Website is marked down if the text is not found. Does not support regex. Disabled for HEAD method (no body returned).</small>
                     </div>
                     <div class="form-group">
                         <label for="site-timeout">Timeout (seconds)</label>
@@ -2256,7 +2256,7 @@ just stop-cron     # stop background cron</pre>
             document.getElementById(id).classList.add('active');
             document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => {
                 b.classList.remove('active');
-                if (b.textContent.trim().toLowerCase() === id) b.classList.add('active');
+                if (b.dataset.section === id) b.classList.add('active');
             });
             closeUserMenu();
             closeMobileMenu();
@@ -2371,7 +2371,7 @@ just stop-cron     # stop background cron</pre>
             const container = document.getElementById('sites-list');
 
             if (!sites.length) {
-                container.innerHTML = '<div class="empty">No sites yet. Add one to start monitoring.</div>';
+                container.innerHTML = '<div class="empty">No websites yet. Add one to start monitoring.</div>';
                 return;
             }
 
@@ -2437,7 +2437,7 @@ just stop-cron     # stop background cron</pre>
 
         function showSiteModal(site = null) {
             loadGroupOptions();
-            document.getElementById('site-modal-title').textContent = site ? 'Edit Site' : 'Add Site';
+            document.getElementById('site-modal-title').textContent = site ? 'Edit Website' : 'Add Website';
             document.getElementById('site-id').value = site ? site.id : '';
             document.getElementById('site-name').value = site ? site.name : '';
             document.getElementById('site-url').value = site ? site.url : '';
@@ -2472,7 +2472,7 @@ just stop-cron     # stop background cron</pre>
         }
 
         async function deleteSite(id, name) {
-            if (!await showConfirm('Delete Site', `Delete site "${name}"?`)) return;
+            if (!await showConfirm('Delete Website', `Delete website "${name}"?`)) return;
             await api('delete_site', { id }, 'POST');
             loadSites();
         }
@@ -2549,7 +2549,7 @@ just stop-cron     # stop background cron</pre>
             if (id) data.id = id;
             const res = await api(id ? 'update_site' : 'create_site', data, 'POST');
             if (res.error) { showToast(res.error, 'error'); return; }
-            showToast(id ? 'Site updated' : 'Site created');
+            showToast(id ? 'Website updated' : 'Website created');
             closeModal('site-modal');
             loadSites();
         });
@@ -2990,7 +2990,7 @@ just stop-cron     # stop background cron</pre>
             document.getElementById(initialSection).classList.add('active');
             document.querySelectorAll('.nav-links button, .mobile-menu button').forEach(b => {
                 b.classList.remove('active');
-                if (b.textContent.trim().toLowerCase() === initialSection) b.classList.add('active');
+                if (b.dataset.section === initialSection) b.classList.add('active');
             });
             if (initialSection === 'sites') loadSites();
             else if (initialSection === 'groups') loadGroups();
@@ -3524,7 +3524,7 @@ function apiTestWebhook(): void {
     $webhook = $hook->fetch();
     if (!$webhook) jsonResponse(['error' => 'Webhook not found'], 404);
 
-    $body = formatWebhookPayload($webhook['type'], 'test', 'Test Site', 'https://example.com', 'This is a test notification');
+    $body = formatWebhookPayload($webhook['type'], 'test', 'Test Website', 'https://example.com', 'This is a test notification');
     sendWebhook($webhook['url'], $body, $webhook['type']);
     jsonResponse(['ok' => true]);
 }
