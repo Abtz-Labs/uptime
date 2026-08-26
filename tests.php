@@ -623,6 +623,82 @@ assert_true(str_contains($lastCheck['message'] ?? '', 'not found'), 'message ind
 $r = req('delete_site', ['id' => $kwSiteId], 'POST', $adminCsrf);
 $r = req('delete_site', ['id' => $headKwSiteId], 'POST', $adminCsrf);
 
+// ─── SITE REORDERING ────────────────────────────────────
+section('Site Reordering');
+
+// Create sites and verify they get auto-assigned positions
+$r = req('create_site', ['name' => 'Alpha Site', 'url' => 'https://alpha.test'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create alpha site');
+$alphaSiteId = $r['body']['id'];
+
+$r = req('create_site', ['name' => 'Beta Site', 'url' => 'https://beta.test'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create beta site');
+$betaSiteId = $r['body']['id'];
+
+$r = req('create_site', ['name' => 'Gamma Site', 'url' => 'https://gamma.test'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create gamma site');
+$gammaSiteId = $r['body']['id'];
+
+// Verify initial order (by position, then name)
+$r = req('list_sites');
+$siteIds = array_map(fn($s) => (int) $s['id'], $r['body']);
+$alphaIdx = array_search($alphaSiteId, $siteIds);
+$betaIdx = array_search($betaSiteId, $siteIds);
+$gammaIdx = array_search($gammaSiteId, $siteIds);
+assert_true($alphaIdx < $betaIdx && $betaIdx < $gammaIdx, 'sites are ordered by creation position');
+
+// Reorder: Gamma, Alpha, Beta
+$r = req('reorder_sites', ['ids' => [$gammaSiteId, $alphaSiteId, $betaSiteId]], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'reorder_sites succeeds');
+
+$r = req('list_sites');
+$siteIds = array_map(fn($s) => (int) $s['id'], $r['body']);
+$alphaIdx = array_search($alphaSiteId, $siteIds);
+$betaIdx = array_search($betaSiteId, $siteIds);
+$gammaIdx = array_search($gammaSiteId, $siteIds);
+assert_true($gammaIdx < $alphaIdx && $alphaIdx < $betaIdx, 'sites reordered: gamma < alpha < beta');
+
+// Reorder rejects empty ids
+$r = req('reorder_sites', ['ids' => []], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'reorder_sites rejects empty ids');
+
+// Status page respects site order
+$r = req('update_site', ['id' => $alphaSiteId, 'visible' => 1], 'POST', $adminCsrf);
+$r = req('update_site', ['id' => $betaSiteId, 'visible' => 1], 'POST', $adminCsrf);
+$r = req('update_site', ['id' => $gammaSiteId, 'visible' => 1], 'POST', $adminCsrf);
+
+$r = req('status_page');
+$statusSiteIds = array_map(fn($s) => (int) $s['id'], $r['body']['sites']);
+$alphaIdx = array_search($alphaSiteId, $statusSiteIds);
+$betaIdx = array_search($betaSiteId, $statusSiteIds);
+$gammaIdx = array_search($gammaSiteId, $statusSiteIds);
+assert_true($gammaIdx < $alphaIdx && $alphaIdx < $betaIdx, 'status page respects site reorder');
+
+// New site after reorder lands at the end, not position 0
+$r = req('create_site', ['name' => 'Delta Site', 'url' => 'https://delta.test'], 'POST', $adminCsrf);
+$deltaSiteId = $r['body']['id'];
+
+$r = req('list_sites');
+$siteIds = array_map(fn($s) => (int) $s['id'], $r['body']);
+$betaIdx = array_search($betaSiteId, $siteIds);
+$deltaIdx = array_search($deltaSiteId, $siteIds);
+assert_true($deltaIdx > $betaIdx, 'new site after reorder appends to end');
+
+// Deleting a site does not break order of remaining sites
+$r = req('delete_site', ['id' => $alphaSiteId], 'POST', $adminCsrf);
+
+$r = req('list_sites');
+$siteIds = array_map(fn($s) => (int) $s['id'], $r['body']);
+$gammaIdx = array_search($gammaSiteId, $siteIds);
+$betaIdx = array_search($betaSiteId, $siteIds);
+$deltaIdx = array_search($deltaSiteId, $siteIds);
+assert_true($gammaIdx < $betaIdx && $betaIdx < $deltaIdx, 'order preserved after deleting a middle site');
+
+// Cleanup
+$r = req('delete_site', ['id' => $betaSiteId], 'POST', $adminCsrf);
+$r = req('delete_site', ['id' => $gammaSiteId], 'POST', $adminCsrf);
+$r = req('delete_site', ['id' => $deltaSiteId], 'POST', $adminCsrf);
+
 // ─── CLEANUP ─────────────────────────────────────────────
 section('Cleanup');
 

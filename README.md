@@ -17,7 +17,7 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 - Overall uptime indicator (Operational/Degraded/Severely Degraded/Down) with 24h/7d/30d/90d breakdown
 - Per-group uptime averages on the status page
 - Per-site URL visibility toggle (hide URLs from the public status page)
-- Drag-and-drop group reordering
+- Drag-and-drop group and site reordering
 - Webhook notifications (Slack, Telegram, generic JSON)
 - Public status page (no login required)
 - Customizable status page title (independent from dashboard branding)

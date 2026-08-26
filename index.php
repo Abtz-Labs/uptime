@@ -83,6 +83,7 @@ function initDatabase(): void {
             enabled INTEGER DEFAULT 1,
             visible INTEGER DEFAULT 1,
             notify INTEGER DEFAULT 1,
+            position INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
         );
@@ -161,7 +162,16 @@ function migrateDatabase(PDO $db): void {
         }
     }
 
-    $db->exec('PRAGMA user_version = 4');
+    // Version 4 → 5: position column on sites
+    if ($version < 5) {
+        $cols = $db->query("PRAGMA table_info(sites)")->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (!in_array('position', $cols)) {
+            $db->exec("ALTER TABLE sites ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
+            $db->exec("UPDATE sites SET position = id");
+        }
+    }
+
+    $db->exec('PRAGMA user_version = 5');
 }
 
 function rotateRecoveryKey(int $userId): string {
@@ -552,6 +562,7 @@ if ($action) {
         'create_site' => apiCreateSite(),
         'update_site' => apiUpdateSite(),
         'delete_site' => apiDeleteSite(),
+        'reorder_sites' => apiReorderSites(),
 
         // Checks
         'run_checks' => apiRunChecks(),
@@ -2364,11 +2375,12 @@ just stop-cron     # stop background cron</pre>
                 return;
             }
 
-            let html = '<table><thead><tr><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
+            let html = '<table id="site-sortable"><thead><tr><th></th><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
             for (const site of sites) {
                 const rawStatus = site.status || 'unknown';
                 const status = rawStatus === 'unknown' && site.enabled ? 'scheduled' : rawStatus;
-                html += `<tr>
+                html += `<tr data-id="${site.id}">
+                    <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
                     <td><span class="status-badge ${status}">${status}</span></td>
                     <td>${escapeHtml(site.name)}</td>
                     <td class="hide-mobile"><a href="${escapeHtml(site.url)}" target="_blank" style="color:var(--text-muted)">${escapeHtml(site.url)}</a></td>
@@ -2382,6 +2394,17 @@ just stop-cron     # stop background cron</pre>
             }
             html += '</tbody></table>';
             container.innerHTML = html;
+
+            Sortable.create(document.querySelector('#site-sortable tbody'), {
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: async function () {
+                    const ids = [...document.querySelectorAll('#site-sortable tbody tr')]
+                        .map(tr => parseInt(tr.dataset.id));
+                    await api('reorder_sites', { ids }, 'POST');
+                }
+            });
         }
 
         async function loadGroupOptions() {
@@ -3214,7 +3237,7 @@ function apiListSites(): void {
         SELECT s.*, ss.status, ss.last_check, ss.last_up, ss.last_down
         FROM sites s
         LEFT JOIN site_status ss ON s.id = ss.site_id
-        ORDER BY s.name
+        ORDER BY s.position, s.name
     ")->fetchAll();
     jsonResponse($sites);
 }
@@ -3231,7 +3254,8 @@ function apiCreateSite(): void {
     $method = $input['method'] ?? 'GET';
 
     $db = getDb();
-    $stmt = $db->prepare("INSERT INTO sites (name, url, method, expected_status, expected_keyword, timeout, interval, group_id, enabled, visible, notify, show_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $maxPos = $db->query("SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM sites")->fetch()['next_pos'];
+    $stmt = $db->prepare("INSERT INTO sites (name, url, method, expected_status, expected_keyword, timeout, interval, group_id, enabled, visible, notify, show_url, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $name,
         $url,
@@ -3245,6 +3269,7 @@ function apiCreateSite(): void {
         $input['visible'] ?? 1,
         $input['notify'] ?? 1,
         $input['show_url'] ?? 1,
+        $maxPos,
     ]);
     $siteId = (int) $db->lastInsertId();
 
@@ -3290,6 +3315,22 @@ function apiDeleteSite(): void {
 
     $db = getDb();
     $db->prepare("DELETE FROM sites WHERE id = ?")->execute([$id]);
+    jsonResponse(['ok' => true]);
+}
+
+function apiReorderSites(): void {
+    requireAuth();
+    $input = getInput();
+    $ids = $input['ids'] ?? [];
+    if (!is_array($ids) || count($ids) === 0) jsonResponse(['error' => 'Missing ids'], 400);
+
+    $db = getDb();
+    $db->exec('BEGIN');
+    $stmt = $db->prepare("UPDATE sites SET position = ? WHERE id = ?");
+    foreach ($ids as $position => $id) {
+        $stmt->execute([(int) $position, (int) $id]);
+    }
+    $db->exec('COMMIT');
     jsonResponse(['ok' => true]);
 }
 
@@ -3504,7 +3545,7 @@ function apiStatusPage(): void {
         FROM sites s
         LEFT JOIN site_status ss ON s.id = ss.site_id
         WHERE s.visible = 1
-        ORDER BY s.name
+        ORDER BY s.position, s.name
     ")->fetchAll();
 
     foreach ($sites as &$site) {
