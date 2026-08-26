@@ -141,7 +141,7 @@ Click "+ Add Site" to add a site to monitor. Each site has:
 - **URL** — the endpoint to check
 - **Method** — GET or HEAD
 - **Expected status** — HTTP status code to consider "up" (default: 200)
-- **Expected keyword** — optional string to look for in the response body
+- **Expected keyword** — optional plain text to look for in the response body (case-insensitive substring match). If the text is not found, the site is marked as down. Examples: `Welcome`, `OK`, `"status":"healthy"`. Does not support regex. Disabled for HEAD method (no body is returned).
 - **Timeout** — maximum seconds to wait for a response
 - **Interval** — how often to check (in seconds)
 - **Group** — assign to a group for organization

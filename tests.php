@@ -552,6 +552,77 @@ $showUrlSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $show
 assert_eq(1, (int)($showUrlSite['show_url'] ?? 0), 'new site defaults to show_url=1');
 $r = req('delete_site', ['id' => $showUrlTestId], 'POST', $adminCsrf);
 
+// ─── EXPECTED KEYWORD ────────────────────────────────────
+section('Expected Keyword');
+
+// Keyword is stored when method is GET
+$r = req('create_site', [
+    'name' => 'Keyword Test',
+    'url' => 'https://example.com',
+    'method' => 'GET',
+    'expected_keyword' => 'Example Domain',
+    'interval' => 1,
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create site with keyword');
+$kwSiteId = $r['body']['id'];
+
+$r = req('list_sites');
+$kwSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $kwSiteId))[0] ?? [];
+assert_eq('Example Domain', $kwSite['expected_keyword'] ?? '', 'keyword stored on create');
+
+// Keyword is cleared when method is HEAD (create)
+$r = req('create_site', [
+    'name' => 'HEAD Keyword Test',
+    'url' => 'https://example.com',
+    'method' => 'HEAD',
+    'expected_keyword' => 'ShouldBeCleared',
+    'interval' => 1,
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create HEAD site with keyword');
+$headKwSiteId = $r['body']['id'];
+
+$r = req('list_sites');
+$headKwSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $headKwSiteId))[0] ?? [];
+assert_eq('', $headKwSite['expected_keyword'] ?? 'NOT_EMPTY', 'keyword cleared on create when method is HEAD');
+
+// Keyword is cleared when method is updated to HEAD
+$r = req('update_site', ['id' => $kwSiteId, 'method' => 'HEAD'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update method to HEAD');
+
+$r = req('list_sites');
+$kwSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $kwSiteId))[0] ?? [];
+assert_eq('', $kwSite['expected_keyword'] ?? 'NOT_EMPTY', 'keyword cleared on update when method changed to HEAD');
+
+// Restore to GET with a keyword for the matching tests
+// Page contains "Example Domain" — using "example domain" (lowercase) to test case-insensitivity
+$r = req('update_site', ['id' => $kwSiteId, 'method' => 'GET', 'expected_keyword' => 'example domain'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'restore site to GET with keyword');
+
+sleep(2);
+$r = req('run_checks');
+assert_eq(200, $r['status'], 'run_checks for keyword test');
+
+$r = req('list_checks', ['site_id' => $kwSiteId]);
+$lastCheck = $r['body'][0] ?? [];
+assert_eq('up', $lastCheck['status'] ?? '', 'case-insensitive keyword match marks site up');
+
+// Keyword NOT found marks site down
+$r = req('update_site', ['id' => $kwSiteId, 'expected_keyword' => 'xyznonexistent999'], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update keyword to non-matching string');
+
+sleep(2);
+$r = req('run_checks');
+assert_eq(200, $r['status'], 'run_checks for missing keyword');
+
+$r = req('list_checks', ['site_id' => $kwSiteId]);
+$lastCheck = $r['body'][0] ?? [];
+assert_eq('down', $lastCheck['status'] ?? '', 'missing keyword marks site down');
+assert_true(str_contains($lastCheck['message'] ?? '', 'not found'), 'message indicates keyword not found');
+
+// Cleanup test sites
+$r = req('delete_site', ['id' => $kwSiteId], 'POST', $adminCsrf);
+$r = req('delete_site', ['id' => $headKwSiteId], 'POST', $adminCsrf);
+
 // ─── CLEANUP ─────────────────────────────────────────────
 section('Cleanup');
 

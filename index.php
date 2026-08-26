@@ -481,10 +481,10 @@ function checkSite(array $site): array {
         $message = "Expected HTTP $expected, got $httpCode";
     }
 
-    // Check for expected keyword
+    // Check for expected keyword (case-insensitive)
     if ($status === 'up' && !empty($site['expected_keyword'])) {
         $body = substr($response, curl_getinfo($ch, CURLINFO_HEADER_SIZE));
-        if (!str_contains($body, $site['expected_keyword'])) {
+        if (stripos($body, $site['expected_keyword']) === false) {
             $status = 'down';
             $message = "Expected keyword '{$site['expected_keyword']}' not found";
         }
@@ -2100,7 +2100,8 @@ just stop-cron     # stop background cron</pre>
                     </div>
                     <div class="form-group">
                         <label for="site-expected-keyword">Expected Keyword (optional)</label>
-                        <input type="text" id="site-expected-keyword">
+                        <input type="text" id="site-expected-keyword" placeholder="e.g. &quot;Welcome&quot; or &quot;OK&quot;">
+                        <small style="color:var(--text-muted);margin-top:0.25rem;display:block">Case-insensitive plain text searched in the response body. Site is marked down if the text is not found. Does not support regex. Disabled for HEAD method (no body returned).</small>
                     </div>
                     <div class="form-group">
                         <label for="site-timeout">Timeout (seconds)</label>
@@ -2400,6 +2401,17 @@ just stop-cron     # stop background cron</pre>
             document.getElementById('site-tab-' + tab).classList.add('active');
         }
 
+        function toggleKeywordField(method) {
+            const field = document.getElementById('site-expected-keyword');
+            const isHead = method === 'HEAD';
+            field.disabled = isHead;
+            if (isHead) field.value = '';
+        }
+
+        document.getElementById('site-method').addEventListener('change', (e) => {
+            toggleKeywordField(e.target.value);
+        });
+
         function showSiteModal(site = null) {
             loadGroupOptions();
             document.getElementById('site-modal-title').textContent = site ? 'Edit Site' : 'Add Site';
@@ -2409,6 +2421,7 @@ just stop-cron     # stop background cron</pre>
             document.getElementById('site-method').value = site ? site.method : 'GET';
             document.getElementById('site-expected-status').value = site ? site.expected_status : 200;
             document.getElementById('site-expected-keyword').value = site ? site.expected_keyword : '';
+            toggleKeywordField(document.getElementById('site-method').value);
             document.getElementById('site-timeout').value = site ? site.timeout : 10;
             document.getElementById('site-interval').value = site ? site.interval : 60;
             document.getElementById('site-group').value = site ? (site.group_id || '') : '';
@@ -3215,14 +3228,16 @@ function apiCreateSite(): void {
     if (!$name || !$url) jsonResponse(['error' => 'Name and URL are required'], 400);
     if (!filter_var($url, FILTER_VALIDATE_URL)) jsonResponse(['error' => 'Invalid URL'], 400);
 
+    $method = $input['method'] ?? 'GET';
+
     $db = getDb();
     $stmt = $db->prepare("INSERT INTO sites (name, url, method, expected_status, expected_keyword, timeout, interval, group_id, enabled, visible, notify, show_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $name,
         $url,
-        $input['method'] ?? 'GET',
+        $method,
         $input['expected_status'] ?? 200,
-        $input['expected_keyword'] ?? '',
+        $method === 'HEAD' ? '' : ($input['expected_keyword'] ?? ''),
         $input['timeout'] ?? 10,
         $input['interval'] ?? 60,
         ($input['group_id'] ?? null) ?: null,
@@ -3244,6 +3259,10 @@ function apiUpdateSite(): void {
     $input = getInput();
     $id = (int) ($input['id'] ?? 0);
     if (!$id) jsonResponse(['error' => 'Missing id'], 400);
+
+    if (($input['method'] ?? '') === 'HEAD') {
+        $input['expected_keyword'] = '';
+    }
 
     $db = getDb();
     $fields = [];
