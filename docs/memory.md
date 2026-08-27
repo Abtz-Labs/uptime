@@ -70,4 +70,7 @@ Session checkpoints for continuity across sessions.
 - **Form UX**: Type field moved first (was URL → Type → Events); URL field hidden for Telegram (auto-constructed); conditional fields per type
 - **DB migration v5→v6**: `bot_token`, `chat_id`, `message_template` columns on `webhooks` table
 - **Backend**: `formatWebhookPayload()` processes templates for both Slack and Telegram; `sendNotifications()` overrides URL for Telegram; `sendWebhook()` simplified (removed unused `$type` param)
+- **Edit webhook**: Edit button per webhook item; reuses form with hidden edit ID; `update_webhook` API for edits
+- **Telegram MarkdownV2**: `parse_mode: MarkdownV2` with auto-escaping of special characters
+- **Template flexibility**: `\{\{\s*key\s*\}\}` regex supports `{{url}}` and `{{ url }}` (optional spaces)
 - **Tests**: 15 new test cases for Telegram webhook validation; total 187 (all passing)

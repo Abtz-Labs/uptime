@@ -372,20 +372,29 @@ function formatWebhookPayload(string $hookType, string $event, string $siteName,
         'timestamp' => date('c'),
     ]);
 
-    $replaceTemplate = fn(?string $tpl) => $tpl
-        ? str_replace(
-            ['{{event}}', '{{site_name}}', '{{url}}', '{{message}}', '{{timestamp}}'],
-            [$event, $siteName, $siteUrl, $message ?? '', date('c')],
-            $tpl
-        )
-        : "$event: $siteName is $message ($siteUrl)";
+    $replaceTemplate = function(?string $tpl) use ($event, $siteName, $siteUrl, $message) {
+        if (!$tpl) return "$event: $siteName is $message ($siteUrl)";
+        $replacements = [
+            'event' => $event,
+            'site_name' => $siteName,
+            'url' => $siteUrl,
+            'message' => $message ?? '',
+            'timestamp' => date('c'),
+        ];
+        return preg_replace_callback('/\{\{\s*(\w+)\s*\}\}/', function($m) use ($replacements) {
+            $key = $m[1];
+            return $replacements[$key] ?? $m[0];
+        }, $tpl);
+    };
+
+    $escapeMd = fn(string $s) => preg_replace('/([_*\[\]()~`>#+\-=|{}.!\\\\])/', '\\\\$1', $s);
 
     return match ($hookType) {
         'slack' => json_encode(['text' => $replaceTemplate($messageTemplate)]),
         'telegram' => $chatId
             ? json_encode([
                 'chat_id' => $chatId,
-                'text' => $replaceTemplate($messageTemplate),
+                'text' => $escapeMd($replaceTemplate($messageTemplate)),
                 'parse_mode' => 'MarkdownV2',
             ])
             : $genericPayload,
@@ -2190,6 +2199,7 @@ just stop-cron     # stop background cron</pre>
                 </div>
                 <div id="site-webhooks-list"></div>
                 <div id="site-webhook-form" class="webhook-form hidden">
+                    <input type="hidden" id="site-webhook-edit-id">
                     <div class="form-group">
                         <label for="site-webhook-type">Type</label>
                         <select id="site-webhook-type" onchange="togglePresetFields()">
@@ -2662,6 +2672,7 @@ just stop-cron     # stop background cron</pre>
                     </div>
                     <div class="webhook-item-actions">
                         <button type="button" class="btn btn-sm" onclick="testSiteWebhook(${h.id}, this)" title="Test">Test</button>
+                        <button type="button" class="btn btn-sm" onclick="editSiteWebhook(${h.id})" title="Edit">Edit</button>
                         <button type="button" class="btn btn-sm btn-danger" onclick="deleteSiteWebhook(${h.id})">Delete</button>
                     </div>
                 </div>`;
@@ -2674,6 +2685,7 @@ just stop-cron     # stop background cron</pre>
             const isOpen = !form.classList.contains('hidden');
             form.classList.toggle('hidden');
             if (!isOpen) {
+                document.getElementById('site-webhook-edit-id').value = '';
                 document.getElementById('site-webhook-url').value = '';
                 document.getElementById('site-webhook-type').value = 'generic';
                 document.getElementById('site-webhook-bot-token').value = '';
@@ -2706,9 +2718,35 @@ just stop-cron     # stop background cron</pre>
             }
         }
 
+        async function editSiteWebhook(id) {
+            const siteId = document.getElementById('site-id').value;
+            const webhooks = await api('list_webhooks', { site_id: siteId }, 'POST');
+            const hook = webhooks.find(w => w.id === id);
+            if (!hook) return;
+            const form = document.getElementById('site-webhook-form');
+            if (form.classList.contains('hidden')) form.classList.remove('hidden');
+            document.getElementById('site-webhook-edit-id').value = hook.id;
+            document.getElementById('site-webhook-type').value = hook.type;
+            if (hook.type === 'telegram') {
+                document.getElementById('site-webhook-bot-token').value = hook.bot_token || '';
+                document.getElementById('site-webhook-chat-id').value = hook.chat_id || '';
+                document.getElementById('site-webhook-message-template').value = hook.message_template || '';
+            } else {
+                document.getElementById('site-webhook-url').value = hook.url || '';
+                if (hook.type === 'slack') {
+                    document.getElementById('site-webhook-slack-template').value = hook.message_template || '';
+                }
+            }
+            const events = (hook.events || '').split(',');
+            document.getElementById('site-webhook-event-down').checked = events.includes('down');
+            document.getElementById('site-webhook-event-recover').checked = events.includes('recover');
+            togglePresetFields();
+        }
+
         async function saveSiteWebhook() {
             const siteId = document.getElementById('site-id').value;
             if (!siteId) return;
+            const editId = document.getElementById('site-webhook-edit-id').value;
             const events = [];
             if (document.getElementById('site-webhook-event-down').checked) events.push('down');
             if (document.getElementById('site-webhook-event-recover').checked) events.push('recover');
@@ -2728,7 +2766,12 @@ just stop-cron     # stop background cron</pre>
                     data.message_template = document.getElementById('site-webhook-slack-template').value;
                 }
             }
-            await api('create_webhook', data, 'POST');
+            if (editId) {
+                data.id = parseInt(editId);
+                await api('update_webhook', data, 'POST');
+            } else {
+                await api('create_webhook', data, 'POST');
+            }
             toggleWebhookForm();
             loadSiteWebhooks(siteId);
         }
