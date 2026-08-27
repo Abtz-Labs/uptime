@@ -293,6 +293,66 @@ assert_eq(200, $r['status'], 'delete site');
 $r = req('list_sites');
 assert_eq(1, count($r['body']), 'one site after delete');
 
+// ─── DASHBOARD CONTRACT ──────────────────────────────────
+section('Dashboard Contract');
+
+// Create a third site with no group (ungrouped)
+$r = req('create_site', [
+    'name' => 'Ungrouped Site',
+    'url' => 'https://ungrouped.test',
+    'interval' => 120,
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create ungrouped site');
+$ungroupedSiteId = $r['body']['id'];
+
+// All sites include group_id field
+$r = req('list_sites');
+foreach ($r['body'] as $s) {
+    assert_true(array_key_exists('group_id', $s), "site '{$s['name']}' includes group_id");
+}
+
+// Grouped site has correct group_id
+$groupedSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0] ?? null;
+assert_eq($groupId, $groupedSite['group_id'] ?? null, 'grouped site has correct group_id');
+
+// Ungrouped site has null group_id
+$ungroupedSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $ungroupedSiteId))[0] ?? null;
+assert_true(array_key_exists('group_id', $ungroupedSite), "ungrouped site keys: " . implode(', ', array_keys($ungroupedSite ?? [])));
+assert_eq(null, $ungroupedSite['group_id'] ?? null, 'ungrouped site has null group_id');
+
+// Groups include position field
+$r = req('list_groups');
+foreach ($r['body'] as $g) {
+    assert_true(array_key_exists('position', $g), "group '{$g['name']}' includes position");
+}
+
+// Groups are ordered by position ascending
+$positions = array_map(fn($g) => $g['position'], $r['body']);
+$sorted = $positions;
+sort($sorted);
+assert_eq($sorted, $positions, 'list_groups returns groups ordered by position');
+
+// Move site to different group
+$r = req('update_site', ['id' => $siteId, 'group_id' => $groupId2], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'move site to different group');
+
+$r = req('list_sites');
+$movedSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0] ?? null;
+assert_eq($groupId2, $movedSite['group_id'] ?? null, 'site group_id updated after move');
+
+// Remove site from group (set to null)
+$r = req('update_site', ['id' => $siteId, 'group_id' => null], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'remove site from group');
+
+$r = req('list_sites');
+$removedSite = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0] ?? null;
+assert_true(array_key_exists('group_id', $removedSite), "removed-from-group site keys: " . implode(', ', array_keys($removedSite ?? [])));
+assert_eq(null, $removedSite['group_id'] ?? null, 'site group_id is null after removal');
+
+// Clean up ungrouped site
+$r = req('delete_site', ['id' => $ungroupedSiteId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'cleanup ungrouped site');
+
 // ─── CHECKS ──────────────────────────────────────────────
 section('Checks');
 

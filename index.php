@@ -1783,6 +1783,7 @@ function serveSetupPage(): void {
 }
 
 function serveDashboard(): void {
+    header('Cache-Control: no-cache, must-revalidate');
     $user = getCurrentUser();
     $db = getDb();
     $localeRow = $db->query("SELECT value FROM settings WHERE key = 'locale'")->fetch();
@@ -2119,6 +2120,62 @@ function serveDashboard(): void {
         .rk-copy-btn { margin-left: 0.5rem; padding: 0.25rem 0.5rem; }
         .webhook-label { font-size: 0.875rem; color: var(--text-muted); }
         .sortable-ghost { opacity: 0.4; }
+
+        .dashboard-group {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 2rem;
+            min-height: 5rem;
+            overflow: hidden;
+        }
+        .dashboard-group-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+            background: var(--surface);
+        }
+        .dashboard-group-count {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-left: auto;
+        }
+        .dashboard-group-actions {
+            display: flex;
+            gap: 0.375rem;
+            margin-left: 0.5rem;
+        }
+        .dashboard-group-sites { padding: 0; }
+        .dashboard-group-sites table { margin: 0; width: 100%; table-layout: fixed; }
+        .dashboard-group-sites th:nth-child(1),
+        .dashboard-group-sites td:nth-child(1) { width: 2.5rem; }
+        .dashboard-group-sites th:nth-child(2),
+        .dashboard-group-sites td:nth-child(2) { width: 6rem; }
+        .dashboard-group-sites th:nth-child(3),
+        .dashboard-group-sites td:nth-child(3) { width: 25%; }
+        .dashboard-group-sites th:nth-child(4),
+        .dashboard-group-sites td:nth-child(4) { width: 30%; }
+        .dashboard-group-sites th:nth-child(5),
+        .dashboard-group-sites td:nth-child(5) { width: 5rem; }
+        .dashboard-group-sites th:nth-child(6),
+        .dashboard-group-sites td:nth-child(6) { width: auto; }
+        .dashboard-group-sites th,
+        .dashboard-group-sites td { padding: 0.375rem 0.5rem; }
+        .dashboard-ungrouped {
+           border: 1px solid var(--border);
+           border-radius: var(--radius);
+           min-height: 5rem;
+           margin-bottom: 2rem;
+           overflow: hidden;
+        }
+        .dashboard-ungrouped .dashboard-group-header {
+            background: var(--surface);
+            color: var(--text-muted);
+            font-size: 0.8125rem;
+        }
         .form-actions { display: flex; gap: 0.5rem; justify-content: space-between; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
         .modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 0 -1.5rem 1rem -1.5rem; padding: 0 1.5rem; }
         .modal-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 0.75rem 1rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
@@ -2197,7 +2254,6 @@ function serveDashboard(): void {
         <div class="topbar-right">
             <nav class="nav-links" id="nav-links">
                 <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
-                <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
                 <button data-section="incidents" onclick="showSection('incidents')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Incidents</button>
                 <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             </nav>
@@ -2224,7 +2280,6 @@ function serveDashboard(): void {
         </div>
         <nav class="mobile-menu" id="mobile-menu">
             <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
-            <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
             <button data-section="incidents" onclick="showSection('incidents')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Incidents</button>
             <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             <hr>
@@ -2234,22 +2289,16 @@ function serveDashboard(): void {
         </nav>
     </div>
     <div class="content">
-        <!-- Sites Section -->
+        <!-- Dashboard Section -->
         <div id="sites" class="section active">
             <div class="section-header">
                 <h2>Monitored Websites</h2>
-                <button class="btn" onclick="showSiteModal()">+ Add Website</button>
+                <div style="display:flex;gap:0.5rem">
+                    <button class="btn btn-outlined" onclick="showGroupModal()">+ Add Group</button>
+                    <button class="btn" onclick="showSiteModal()">+ Add Website</button>
+                </div>
             </div>
             <div id="sites-list"><div class="empty">Loading...</div></div>
-        </div>
-
-        <!-- Groups Section -->
-        <div id="groups" class="section">
-            <div class="section-header">
-                <h2>Groups</h2>
-                <button class="btn" onclick="showGroupModal()">+ Add Group</button>
-            </div>
-            <div id="groups-list"><div class="empty">Loading...</div></div>
         </div>
 
         <!-- Incidents Section -->
@@ -2398,12 +2447,8 @@ function serveDashboard(): void {
             <h3>Help</h3>
             <div class="help-content">
                 <div class="help-section">
-                    <h4>Websites</h4>
-                    <p>Add websites to monitor by clicking <strong>+ Add Website</strong>. Each website can be configured with a check interval, expected status code, keyword matching, and notification settings. Websites can be temporarily disabled without deletion.</p>
-                </div>
-                <div class="help-section">
-                    <h4>Groups</h4>
-                    <p>Organize sites into groups (e.g., Production, Staging). Drag the <strong>⠿</strong> handle to reorder groups. Assign sites to groups via the site edit modal.</p>
+                    <h4>Websites & Groups</h4>
+                    <p>Add websites to monitor by clicking <strong>+ Add Website</strong>. Organize them into groups (e.g., Production, Staging) with <strong>+ Add Group</strong>. Drag the <strong>⠿</strong> handle to reorder. Assign sites to groups via the site edit modal.</p>
                 </div>
                 <div class="help-section">
                     <h4>Status Page</h4>
@@ -2449,8 +2494,7 @@ just stop-cron     # stop background cron</pre>
                 <div class="help-section">
                     <h4>Keyboard Shortcuts</h4>
                     <table class="help-table">
-                        <tr><td><kbd>S</kbd></td><td>Websites</td></tr>
-                        <tr><td><kbd>G</kbd></td><td>Groups</td></tr>
+                        <tr><td><kbd>W</kbd></td><td>Websites</td></tr>
                         <tr><td><kbd>I</kbd></td><td>Incidents</td></tr>
                         <tr><td><kbd>A</kbd></td><td>Account</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>,</kbd></td><td>App Settings</td></tr>
@@ -2653,10 +2697,6 @@ just stop-cron     # stop background cron</pre>
                     <label for="group-name">Name</label>
                     <input type="text" id="group-name" required>
                 </div>
-                <div class="form-group">
-                    <label for="group-position">Position</label>
-                    <input type="number" id="group-position" value="0" min="0">
-                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-gray" onclick="closeModal('group-modal')">Cancel</button>
                     <button type="submit" class="btn" data-modal-save>Save</button>
@@ -2748,8 +2788,7 @@ just stop-cron     # stop background cron</pre>
             closeUserMenu();
             closeMobileMenu();
             history.replaceState(null, '', '#' + id);
-            if (id === 'sites') loadSites();
-            if (id === 'groups') loadGroups();
+            if (id === 'sites') loadDashboard();
             if (id === 'incidents') loadIncidents();
         }
 
@@ -2853,21 +2892,30 @@ just stop-cron     # stop background cron</pre>
             window.location.href = '/dash/login';
         }
 
-        // ─── SITES ───────────────────────────────────────
-        async function loadSites() {
-            const [sites, groups] = await Promise.all([api('list_sites'), api('list_groups')]);
+        // ─── DASHBOARD ─────────────────────────────────────
+        async function loadDashboard() {
+          const [rawSites, rawGroups] = await Promise.all([api('list_sites'), api('list_groups')]);
+            const sites = Array.isArray(rawSites) ? rawSites : [];
+            const groups = Array.isArray(rawGroups) ? rawGroups : [];
             const container = document.getElementById('sites-list');
 
-            if (!sites.length) {
+            if (!sites.length && !groups.length) {
                 container.innerHTML = '<div class="empty">No websites yet. Add one to start monitoring.</div>';
                 return;
             }
 
-            let html = '<table id="site-sortable"><thead><tr><th></th><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
+            const groupsMap = {};
+            for (const g of groups) groupsMap[g.id] = { ...g, sites: [] };
+            const ungrouped = [];
             for (const site of sites) {
+                if (site.group_id && groupsMap[site.group_id]) groupsMap[site.group_id].sites.push(site);
+                else ungrouped.push(site);
+            }
+
+            function siteRow(site) {
                 const rawStatus = site.status || 'unknown';
                 const status = rawStatus === 'unknown' && site.enabled ? 'scheduled' : rawStatus;
-                html += `<tr data-id="${site.id}">
+                return `<tr data-id="${site.id}">
                     <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
                     <td><span class="status-badge ${status}">${status}</span></td>
                     <td>${escapeHtml(site.name)}</td>
@@ -2880,23 +2928,71 @@ just stop-cron     # stop background cron</pre>
                     </td>
                 </tr>`;
             }
-            html += '</tbody></table>';
+
+            let html = '';
+            const siteTableHead = '<table class="dashboard-sites"><thead><tr><th></th><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
+
+            for (const group of groups) {
+              const gSites = groupsMap[group.id].sites;
+                html += `<div class="dashboard-group" data-group-id="${group.id}">
+                    <div class="dashboard-group-header">
+                        <span class="drag-handle" title="Drag to reorder">⠿</span>
+                        <strong>${escapeHtml(group.name)}</strong>
+                        <span class="dashboard-group-count">${gSites.length} site${gSites.length !== 1 ? 's' : ''}</span>
+                        <span class="dashboard-group-actions">
+                            <button class="btn btn-sm btn-outlined" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}')">Edit</button>
+                            <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteGroup(${group.id}, '${escapeHtml(group.name)}')">Delete</button>
+                        </span>
+                    </div>`;
+                if (gSites.length) {
+                    html += `<div class="dashboard-group-sites">${siteTableHead}`;
+                    for (const site of gSites) html += siteRow(site);
+                    html += '</tbody></table></div>';
+                }
+                html += '</div>';
+            }
+
+            if (ungrouped.length) {
+                html += `<div class="dashboard-ungrouped">
+                    <div class="dashboard-group-header">Ungrouped</div>
+                    <div class="dashboard-group-sites">${siteTableHead}`;
+                for (const site of ungrouped) html += siteRow(site);
+                html += '</tbody></table></div>';
+            }
+
             container.innerHTML = html;
 
-            Sortable.create(document.querySelector('#site-sortable tbody'), {
-                handle: '.drag-handle',
+            // Group-level Sortable
+            Sortable.create(container, {
+                handle: '.dashboard-group-header .drag-handle',
                 animation: 150,
                 ghostClass: 'sortable-ghost',
+                draggable: '.dashboard-group',
                 onEnd: async function () {
-                    const ids = [...document.querySelectorAll('#site-sortable tbody tr')]
-                        .map(tr => parseInt(tr.dataset.id));
-                    await api('reorder_sites', { ids }, 'POST');
+                    const ids = [...container.querySelectorAll('.dashboard-group')]
+                        .map(el => parseInt(el.dataset.groupId));
+                    await api('reorder_groups', { ids }, 'POST');
                 }
+            });
+
+            // Site-level Sortable (one per group + ungrouped)
+            container.querySelectorAll('.dashboard-group-sites tbody').forEach(tbody => {
+                Sortable.create(tbody, {
+                    handle: '.drag-handle',
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onEnd: async function () {
+                        const ids = [...tbody.querySelectorAll('tr')]
+                            .map(tr => parseInt(tr.dataset.id));
+                        await api('reorder_sites', { ids }, 'POST');
+                    }
+                });
             });
         }
 
         async function loadGroupOptions() {
-            const groups = await api('list_groups');
+            const raw = await api('list_groups');
+            const groups = Array.isArray(raw) ? raw : [];
             const select = document.getElementById('site-group');
             select.innerHTML = '<option value="">None</option>';
             for (const g of groups) {
@@ -2954,7 +3050,8 @@ just stop-cron     # stop background cron</pre>
         }
 
         async function editSite(id) {
-            const sites = await api('list_sites');
+            const raw = await api('list_sites');
+            const sites = Array.isArray(raw) ? raw : [];
             const site = sites.find(s => s.id == id);
             if (site) showSiteModal(site);
         }
@@ -2962,7 +3059,7 @@ just stop-cron     # stop background cron</pre>
         async function deleteSite(id, name) {
             if (!await showConfirm('Delete Website', `Delete website "${name}"?`)) return;
             await api('delete_site', { id }, 'POST');
-            loadSites();
+            loadDashboard();
         }
 
         let _checksSiteId = null;
@@ -3038,7 +3135,7 @@ just stop-cron     # stop background cron</pre>
             if (res.error) { showToast(res.error, 'error'); return; }
             showToast(id ? 'Website updated' : 'Website created');
             closeModal('site-modal');
-            loadSites();
+            loadDashboard();
         });
 
         document.getElementById('site-modal-save-btn').addEventListener('click', () => {
@@ -3068,8 +3165,7 @@ just stop-cron     # stop background cron</pre>
             const modalOpen = document.querySelector('.modal-overlay.active');
             if (isInput || modalOpen) return;
 
-            if (e.key === 's' || e.key === 'S') { showSection('sites'); return; }
-            if (e.key === 'g' || e.key === 'G') { showSection('groups'); return; }
+            if (e.key === 'w' || e.key === 'W') { showSection('sites'); return; }
             if (e.key === 'i' || e.key === 'I') { showSection('incidents'); return; }
             if (e.key === 'a' || e.key === 'A') { showAccountModal(); return; }
             if (e.key === '?') { showHelp(); return; }
@@ -3225,59 +3321,22 @@ just stop-cron     # stop background cron</pre>
             setTimeout(() => { btn.textContent = 'Test'; btn.disabled = false; }, 2000);
         }
 
-        // ─── GROUPS ──────────────────────────────────────
-        async function loadGroups() {
-            const groups = await api('list_groups');
-            const container = document.getElementById('groups-list');
-
-            if (!groups.length) {
-                container.innerHTML = '<div class="empty">No groups yet.</div>';
-                return;
-            }
-
-            let html = '<table id="group-sortable"><thead><tr><th></th><th>Name</th><th>Actions</th></tr></thead><tbody>';
-            for (const group of groups) {
-                html += `<tr data-id="${group.id}">
-                    <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
-                    <td>${escapeHtml(group.name)}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outlined" onclick="editGroup(${group.id}, '${escapeHtml(group.name)}', ${group.position ?? 0})">Edit</button>
-                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteGroup(${group.id}, '${escapeHtml(group.name)}')">Delete</button>
-                    </td>
-                </tr>`;
-            }
-            html += '</tbody></table>';
-            container.innerHTML = html;
-
-            Sortable.create(document.querySelector('#group-sortable tbody'), {
-                handle: '.drag-handle',
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                onEnd: async function () {
-                    const ids = [...document.querySelectorAll('#group-sortable tbody tr')]
-                        .map(tr => parseInt(tr.dataset.id));
-                    await api('reorder_groups', { ids }, 'POST');
-                }
-            });
-        }
-
         function showGroupModal(group = null) {
             document.getElementById('group-modal-title').textContent = group ? 'Edit Group' : 'Add Group';
             document.getElementById('group-id').value = group ? group.id : '';
             document.getElementById('group-name').value = group ? group.name : '';
-            document.getElementById('group-position').value = group ? (group.position ?? 0) : 0;
             document.getElementById('group-modal').classList.add('active');
             focusFirstInput('group-modal');
         }
 
-        function editGroup(id, name, position) {
-            showGroupModal({ id, name, position });
+        function editGroup(id, name) {
+            showGroupModal({ id, name });
         }
 
         async function deleteGroup(id, name) {
             if (!await showConfirm('Delete Group', `Delete group "${name}"? Sites in this group will become ungrouped.`)) return;
             await api('delete_group', { id }, 'POST');
-            loadGroups();
+            loadDashboard();
         }
 
         document.getElementById('group-form').addEventListener('submit', async (e) => {
@@ -3285,14 +3344,13 @@ just stop-cron     # stop background cron</pre>
             const id = document.getElementById('group-id').value;
             const data = {
                 name: document.getElementById('group-name').value,
-                position: parseInt(document.getElementById('group-position').value) || 0,
             };
             if (id) data.id = id;
             const res = await api(id ? 'update_group' : 'create_group', data, 'POST');
             if (res.error) { showToast(res.error, 'error'); return; }
             showToast(id ? 'Group updated' : 'Group created');
             closeModal('group-modal');
-            loadGroups();
+            loadDashboard();
         });
 
         // ─── INCIDENTS ───────────────────────────────────
@@ -3801,7 +3859,7 @@ just stop-cron     # stop background cron</pre>
         }
 
         // Load initial data from URL hash
-        const validSections = ['sites', 'groups'];
+        const validSections = ['sites'];
         const initialSection = location.hash.replace('#', '');
         if (validSections.includes(initialSection)) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -3810,11 +3868,8 @@ just stop-cron     # stop background cron</pre>
                 b.classList.remove('active');
                 if (b.dataset.section === initialSection) b.classList.add('active');
             });
-            if (initialSection === 'sites') loadSites();
-            else if (initialSection === 'groups') loadGroups();
-        } else {
-            loadSites();
         }
+        loadDashboard();
 
         // Show recovery key modal if present in sessionStorage
         const rk = sessionStorage.getItem('rk');
@@ -3841,14 +3896,14 @@ just stop-cron     # stop background cron</pre>
             }, 1000);
         }
         const _initSection = location.hash.replace('#', '') || 'sites';
-        if (['sites', 'groups', 'incidents'].includes(_initSection)) {
+        if (['sites', 'incidents'].includes(_initSection)) {
             showSection(_initSection);
         } else {
-            loadSites();
+            loadDashboard();
         }
         startRefreshTimer('sites-refresh', 30, () => {
             const active = document.querySelector('.section.active');
-            if (active && active.id === 'sites') loadSites();
+            if (active && active.id === 'sites') loadDashboard();
         });
     </script>
 </body>

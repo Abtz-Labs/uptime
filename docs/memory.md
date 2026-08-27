@@ -78,3 +78,6 @@ Session checkpoints for continuity across sessions.
 - **Tests**: 262 total (all passing); 75 new tests covering webhooks, incidents, incident updates, status page incident filtering (time-based buckets)
 - **Status page tweaks**: group uptime label capitalized ("Uptime"), website cards show percentage only (no "uptime" text)
 - **Bug fix**: `showSiteModal()` now async, awaits `loadGroupOptions()` so group select is populated before setting value on edit
+- **Dashboard merge** (plan `2026-08-27-merge-websites-groups`): replaced two-tab (Websites / Groups) navigation with single unified page; groups render with nested sites; ungrouped sites under "(Ungrouped)" section; group-level and site-level drag-and-drop reorder; removed `loadGroups()`, `showSection()` simplified, group modal position field removed; `G` keyboard shortcut removed; help modal updated; CSS for `.dashboard-group`, `.dashboard-group-header`, `.dashboard-group-sites`, `.dashboard-ungrouped`
+- **Dashboard contract tests**: 15 new tests verifying `group_id` in site responses, `position` in group responses, groups ordered by position, group membership changes
+- Test count: 277 (all passing)
