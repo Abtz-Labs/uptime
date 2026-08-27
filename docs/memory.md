@@ -76,3 +76,5 @@ Session checkpoints for continuity across sessions.
 - **Incidents system** (restored from backup): `incidents` + `incident_updates` tables (DB v6→v7); full CRUD API; status page shows active/recent/history; dashboard tab with modal
 - **Locale/date formatting**: `locale` setting; `fmtDate()`, `fmtTime()`, `fmtDateBare()`, `fmtResolvedRelative()`; 10 locale options (UTC, ja-JP, en-US, en-GB, de-DE, fr-FR, pt-BR, ko-KR, zh-CN)
 - **Tests**: 262 total (all passing); 75 new tests covering webhooks, incidents, incident updates, status page incident filtering (time-based buckets)
+- **Status page tweaks**: group uptime label capitalized ("Uptime"), website cards show percentage only (no "uptime" text)
+- **Bug fix**: `showSiteModal()` now async, awaits `loadGroupOptions()` so group select is populated before setting value on edit

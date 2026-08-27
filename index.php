@@ -2923,8 +2923,8 @@ just stop-cron     # stop background cron</pre>
             toggleKeywordField(e.target.value);
         });
 
-        function showSiteModal(site = null) {
-            loadGroupOptions();
+        async function showSiteModal(site = null) {
+            await loadGroupOptions();
             document.getElementById('site-modal-title').textContent = site ? 'Edit Website' : 'Add Website';
             document.getElementById('site-id').value = site ? site.id : '';
             document.getElementById('site-name').value = site ? site.name : '';

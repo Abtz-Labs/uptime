@@ -1109,6 +1109,7 @@ $updateTestIncidentId = $r['body']['id'];
 $r = req('create_incident_update', [
     'incident_id' => $updateTestIncidentId,
     'description' => 'Investigating the issue',
+    'created_at' => '2026-08-27 14:00:00',
 ], 'POST', $adminCsrf);
 assert_eq(200, $r['status'], 'create incident update succeeds');
 $updateId = $r['body']['id'];
