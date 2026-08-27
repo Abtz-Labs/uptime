@@ -372,14 +372,16 @@ function formatWebhookPayload(string $hookType, string $event, string $siteName,
         'timestamp' => date('c'),
     ]);
 
-    $replaceTemplate = function(?string $tpl) use ($event, $siteName, $siteUrl, $message) {
+    $escapeMd = fn(string $s) => preg_replace('/([_*\[\]()~`>#+\-=|{}.!\\\\])/', '\\\\$1', $s);
+
+    $replaceTemplate = function(?string $tpl) use ($event, $siteName, $siteUrl, $message, $escapeMd) {
         if (!$tpl) return "$event: $siteName is $message ($siteUrl)";
         $replacements = [
-            'event' => $event,
-            'site_name' => $siteName,
-            'url' => $siteUrl,
-            'message' => $message ?? '',
-            'timestamp' => date('c'),
+            'event' => $escapeMd($event),
+            'site_name' => $escapeMd($siteName),
+            'url' => $escapeMd($siteUrl),
+            'message' => $escapeMd($message ?? ''),
+            'timestamp' => $escapeMd(date('c')),
         ];
         return preg_replace_callback('/\{\{\s*(\w+)\s*\}\}/', function($m) use ($replacements) {
             $key = $m[1];
@@ -387,14 +389,12 @@ function formatWebhookPayload(string $hookType, string $event, string $siteName,
         }, $tpl);
     };
 
-    $escapeMd = fn(string $s) => preg_replace('/([_*\[\]()~`>#+\-=|{}.!\\\\])/', '\\\\$1', $s);
-
     return match ($hookType) {
         'slack' => json_encode(['text' => $replaceTemplate($messageTemplate)]),
         'telegram' => $chatId
             ? json_encode([
                 'chat_id' => $chatId,
-                'text' => $escapeMd($replaceTemplate($messageTemplate)),
+                'text' => $replaceTemplate($messageTemplate),
                 'parse_mode' => 'MarkdownV2',
             ])
             : $genericPayload,
