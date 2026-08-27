@@ -185,7 +185,37 @@ function migrateDatabase(PDO $db): void {
         }
     }
 
-    $db->exec('PRAGMA user_version = 6');
+    // Version 6 → 7: Incidents and incident updates tables
+    if ($version < 7) {
+        if (!$db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='incidents'")->fetch()) {
+            $db->exec("
+                CREATE TABLE incidents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'ongoing',
+                    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    resolved_at TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
+            ");
+            $db->exec("CREATE INDEX idx_incidents_status ON incidents(status, resolved_at)");
+        }
+        if (!$db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='incident_updates'")->fetch()) {
+            $db->exec("
+                CREATE TABLE incident_updates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    incident_id INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE
+                )
+            ");
+            $db->exec("CREATE INDEX idx_incident_updates_incident ON incident_updates(incident_id)");
+        }
+    }
+
+    $db->exec('PRAGMA user_version = 7');
 }
 
 function rotateRecoveryKey(int $userId): string {
@@ -620,6 +650,15 @@ if ($action) {
         'delete_webhook' => apiDeleteWebhook(),
         'test_webhook' => apiTestWebhook(),
 
+        // Incidents
+        'list_incidents' => apiListIncidents(),
+        'create_incident' => apiCreateIncident(),
+        'update_incident' => apiUpdateIncident(),
+        'delete_incident' => apiDeleteIncident(),
+        'create_incident_update' => apiCreateIncidentUpdate(),
+        'update_incident_update' => apiUpdateIncidentUpdate(),
+        'delete_incident_update' => apiDeleteIncidentUpdate(),
+
         // Status
         'status_page' => apiStatusPage(),
 
@@ -882,6 +921,120 @@ function serveStatusPage(): void {
             color: var(--text-muted);
             margin-top: 0.25rem;
         }
+        .incidents-section { margin: 1.5rem 0; }
+        .incidents-header {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+        .incident-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        .incident-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .incident-card-title {
+            font-weight: 600;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .incident-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .incident-badge {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: #fff;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+        .incident-card-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .incident-chevron-wrap {
+            cursor: pointer;
+            padding: 0.125rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        .incident-chevron-wrap:hover { background: var(--border); }
+        .incident-updates {
+            margin-top: 0.75rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border);
+            display: none;
+        }
+        .incident-card.expanded .incident-updates { display: block; }
+        .incident-card.expanded .incident-latest-update { display: none; }
+        .incident-latest-update {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.8125rem;
+            line-height: 1.4;
+        }
+        .incident-chevron {
+            transition: transform 0.2s;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        .incident-card.expanded .incident-chevron { transform: rotate(180deg); }
+        .incident-update-row {
+            display: flex;
+            gap: 0.75rem;
+            padding: 0.25rem 0;
+            font-size: 0.8125rem;
+            line-height: 1.4;
+        }
+        .incident-update-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            white-space: nowrap;
+            min-width: 3.5rem;
+        }
+        .incidents-history-toggle {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem 0;
+        }
+        .incidents-history-toggle:hover { color: var(--text); }
+        .incidents-history-content { display: none; }
+        .incidents-section.expanded .incidents-history-content { display: block; }
+        .incidents-section.expanded .history-chevron { transform: rotate(90deg); }
         .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
         .footer {
             text-align: center;
@@ -915,7 +1068,7 @@ function serveStatusPage(): void {
         </div>
         <div class="footer">
             <p>
-              Last updated: <span id="last-updated">—</span> UTC · Refresh in <span id="countdown">30</span>s
+              Last updated: <span id="last-updated">—</span> · Refresh in <span id="countdown">30</span>s
            </p>
            <div>
               <p>Powered by <a href="https://github.com/Abtz-Labs/uptime" target="_blank" rel="noopener noreferrer">Uptime</a> &mdash; <a href="https://github.com/Abtz-Labs/uptime/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">O'SAASy</a> Licensed</p>
@@ -924,12 +1077,58 @@ function serveStatusPage(): void {
        </div>
     </div>
     <script>
+        function fmtDate(utcStr) {
+            if (!utcStr) return '—';
+            const d = new Date(utcStr + 'Z');
+            return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+        }
+
+        function fmtTime(utcStr) {
+            if (!utcStr) return '';
+            const d = new Date(utcStr + 'Z');
+            return d.toISOString().slice(11, 16) + ' UTC';
+        }
+
+        function toggleIncident(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.toggle('expanded');
+            const key = '_expanded';
+            const set = JSON.parse(sessionStorage.getItem(key) || '[]');
+            if (el.classList.contains('expanded')) {
+                if (!set.includes(id)) set.push(id);
+            } else {
+                const idx = set.indexOf(id);
+                if (idx > -1) set.splice(idx, 1);
+            }
+            sessionStorage.setItem(key, JSON.stringify(set));
+        }
+
+        function toggleHistory(el) {
+            el.parentElement.classList.toggle('expanded');
+            const key = '_history_expanded';
+            sessionStorage.setItem(key, el.parentElement.classList.contains('expanded') ? '1' : '');
+        }
+
+        function restoreExpandedState() {
+            const set = JSON.parse(sessionStorage.getItem('_expanded') || '[]');
+            for (const id of set) {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('expanded');
+            }
+            if (sessionStorage.getItem('_history_expanded')) {
+                const hist = document.querySelector('.incidents-section:has(.incidents-history-toggle)');
+                if (hist) hist.classList.add('expanded');
+            }
+        }
+
         async function loadStatus() {
             try {
                 const res = await fetch('/?action=status_page');
                 const data = await res.json();
                 renderStatus(data);
-                document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+                restoreExpandedState();
+                document.getElementById('last-updated').textContent = new Date().toISOString().slice(11, 19) + ' UTC';
             } catch (e) {
                 document.getElementById('status-content').innerHTML = '<div class="empty">Failed to load status</div>';
             }
@@ -988,12 +1187,23 @@ function serveStatusPage(): void {
                     </div>`;
             }
 
+            // Render active incidents (ongoing/observation) — above sites
+            const incidents = data.incidents || [];
+            if (incidents.length > 0) {
+                html += `<div class="incidents-section">`;
+                html += `<div class="incidents-header"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Incidents</div>`;
+                for (const inc of incidents) {
+                    html += renderIncidentCard(inc, 'latest');
+                }
+                html += `</div>`;
+            }
+
             // Render grouped sites
             for (const group of groups) {
                 const groupSites = sites.filter(s => s.group_id == group.id);
                 if (groupSites.length === 0) continue;
 
-                const gUptime = group.uptime_24h !== null ? group.uptime_24h.toFixed(1) + '% uptime' : '';
+                const gUptime = group.uptime_24h !== null ? group.uptime_24h.toFixed(1) + '% Uptime' : '';
                 html += `<div class="group">`;
                 html += `<div class="group-header"><span>${escapeHtml(group.name)}</span><span class="group-meta">${gUptime}</span></div>`;
                 for (const site of groupSites) {
@@ -1012,7 +1222,116 @@ function serveStatusPage(): void {
                 html += `</div>`;
             }
 
+            // Render recently resolved — below sites
+            const recentResolved = data.recent_resolved || [];
+            if (recentResolved.length > 0) {
+                html += `<div class="incidents-section">`;
+                html += `<div class="incidents-header" style="color:var(--text-muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"/></svg> Recently Resolved</div>`;
+                for (const inc of recentResolved) {
+                    html += renderIncidentCard(inc, 'collapsed');
+                }
+                html += `</div>`;
+            }
+
+            // Render incidents history — collapsible block
+            const history = data.incidents_history || [];
+            if (history.length > 0) {
+                html += `<div class="incidents-section">`;
+                html += `<div class="incidents-history-toggle" onclick="toggleHistory(this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;transition:transform 0.2s" class="history-chevron"><path d="m9 18 6-6-6-6"/></svg> Incidents History (${history.length})</div>`;
+                html += `<div class="incidents-history-content">`;
+                for (const inc of history) {
+                    html += renderIncidentCard(inc, 'collapsed');
+                }
+                html += `</div></div>`;
+            }
+
             container.innerHTML = html;
+        }
+
+        const _statusLabelsInc = { ongoing: 'ON GOING', observation: 'OBSERVING', resolved: 'RESOLVED' };
+        const _statusColorsInc = { ongoing: '#ef4444', observation: '#f59e0b', resolved: '#22c55e' };
+
+        function incidentElapsed(startStr, endStr) {
+            if (!startStr) return '';
+            const start = new Date(startStr + 'Z').getTime();
+            const end = endStr ? new Date(endStr + 'Z').getTime() : Date.now();
+            const ms = end - start;
+            if (ms < 0) return '';
+            const s = Math.floor(ms / 1000);
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            if (d > 0) return `${d}d ${h}h`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        }
+
+        function fmtDateRange(startStr, endStr) {
+            if (!startStr || !endStr) return '';
+            const s = new Date(startStr + 'Z');
+            const e = new Date(endStr + 'Z');
+            const pad = n => String(n).padStart(2, '0');
+            const sDate = s.toISOString().slice(0, 10);
+            const sTime = s.toISOString().slice(11, 16);
+            const eDate = e.toISOString().slice(0, 10);
+            const eTime = e.toISOString().slice(11, 16);
+            const startPart = `${sDate} ${sTime}`;
+
+            let endPart;
+            if (sDate === eDate) {
+                endPart = eTime;
+            } else if (sDate.slice(0, 7) === eDate.slice(0, 7)) {
+                endPart = `${pad(e.getUTCDate())} ${eTime}`;
+            } else if (sDate.slice(0, 4) === eDate.slice(0, 4)) {
+                endPart = `${pad(e.getUTCMonth() + 1)}-${pad(e.getUTCDate())} ${eTime}`;
+            } else {
+                endPart = `${eDate} ${eTime}`;
+            }
+            return `${startPart} ~ ${endPart} UTC`;
+        }
+
+        function renderIncidentCard(inc, mode) {
+            const color = _statusColorsInc[inc.status];
+            const badge = `<span class="incident-badge" style="background:${color}">${_statusLabelsInc[inc.status]}</span>`;
+            const elapsed = incidentElapsed(inc.started_at, inc.resolved_at);
+            const elapsedHtml = elapsed ? ` · ${elapsed}` : '';
+            let meta = inc.started_at ? `Started ${fmtDate(inc.started_at)}${elapsedHtml}` : '';
+            if (inc.status === 'resolved' && inc.resolved_at) {
+                meta = `${fmtDateRange(inc.started_at, inc.resolved_at)}${elapsedHtml}`;
+            }
+
+            let latestHtml = '';
+            let updatesHtml = '';
+            if (inc.updates && inc.updates.length > 0) {
+                const allUpdates = inc.updates.map(u => {
+                    const t = u.created_at ? fmtTime(u.created_at) : '';
+                    return `<div class="incident-update-row"><span class="incident-update-time">${t}</span><span>${escapeHtml(u.description)}</span></div>`;
+                }).join('');
+
+                if (mode === 'latest') {
+                    const last = inc.updates[inc.updates.length - 1];
+                    const t = last.created_at ? fmtTime(last.created_at) : '';
+                    latestHtml = `<div class="incident-latest-update"><span class="incident-update-time">${t}</span><span>${escapeHtml(last.description)}</span></div>`;
+                }
+                updatesHtml = `<div class="incident-updates">${allUpdates}</div>`;
+            }
+
+            const uid = 'inc-' + inc.id;
+            return `
+                <div class="incident-card" id="${uid}">
+                    <div class="incident-card-header">
+                        <div class="incident-card-title"><span class="incident-dot" style="background:${color}"></span>${escapeHtml(inc.title)}</div>
+                        ${badge}
+                    </div>
+                    <div class="incident-card-meta">
+                        <span>${meta}</span>
+                        <span class="incident-chevron-wrap" onclick="toggleIncident('${uid}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="incident-chevron"><path d="m6 9 6 6 6-6"/></svg>
+                        </span>
+                    </div>
+                    ${latestHtml}
+                    ${updatesHtml}
+                </div>`;
         }
 
         function renderSite(site) {
@@ -1058,7 +1377,7 @@ function serveStatusPage(): void {
                     </div>
                     <div class="site-meta">
                         <div class="site-response">${response}</div>
-                        ${uptime !== null ? `<div class="uptime-pct">${uptime}% uptime</div>` : ''}
+                        ${uptime !== null ? `<div class="uptime-pct">${uptime}%</div>` : ''}
                     </div>
                 </div>
             `;
@@ -1465,6 +1784,9 @@ function serveSetupPage(): void {
 
 function serveDashboard(): void {
     $user = getCurrentUser();
+    $db = getDb();
+    $localeRow = $db->query("SELECT value FROM settings WHERE key = 'locale'")->fetch();
+    $dashLocale = ($localeRow && $localeRow['value']) ? $localeRow['value'] : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1698,6 +2020,9 @@ function serveDashboard(): void {
         .status-badge.down { background: rgba(239, 68, 68, 0.15); color: var(--red); }
         .status-badge.unknown { background: rgba(100, 116, 139, 0.15); color: var(--gray); }
         .status-badge.scheduled { background: rgba(59, 130, 246, 0.15); color: var(--blue); }
+        .status-badge.ongoing { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+        .status-badge.observation { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .status-badge.resolved { background: rgba(34, 197, 94, 0.15); color: var(--green); }
         .update-badge {
             display: none;
             padding: 0.125rem 0.5rem;
@@ -1873,6 +2198,7 @@ function serveDashboard(): void {
             <nav class="nav-links" id="nav-links">
                 <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
                 <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+                <button data-section="incidents" onclick="showSection('incidents')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Incidents</button>
                 <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.25rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             </nav>
             <div class="user-dropdown">
@@ -1899,6 +2225,7 @@ function serveDashboard(): void {
         <nav class="mobile-menu" id="mobile-menu">
             <button class="active" data-section="sites" onclick="showSection('sites')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>Websites</button>
             <button data-section="groups" onclick="showSection('groups')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>Groups</button>
+            <button data-section="incidents" onclick="showSection('incidents')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Incidents</button>
             <a href="/" target="_blank" class="nav-link-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>Status Page</a>
             <hr>
             <button onclick="showAccountModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0.375rem"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Account</button>
@@ -1923,6 +2250,15 @@ function serveDashboard(): void {
                 <button class="btn" onclick="showGroupModal()">+ Add Group</button>
             </div>
             <div id="groups-list"><div class="empty">Loading...</div></div>
+        </div>
+
+        <!-- Incidents Section -->
+        <div id="incidents" class="section">
+            <div class="section-header">
+                <h2>Incident Reports</h2>
+                <button class="btn" onclick="showIncidentModal()">+ New Incident</button>
+            </div>
+            <div id="incidents-list"><div class="empty">Loading...</div></div>
         </div>
 
     </div>
@@ -1999,6 +2335,48 @@ function serveDashboard(): void {
         </div>
     </div>
 
+    <!-- Incident Modal -->
+    <div class="modal-overlay" id="incident-modal">
+        <div class="modal modal-lg">
+            <h3 id="incident-modal-title">New Incident</h3>
+            <div class="form-group">
+                <label for="incident-title">Title</label>
+                <input type="text" id="incident-title" placeholder="Brief description of the incident">
+            </div>
+            <div class="form-group">
+                <label for="incident-status">Status</label>
+                <select id="incident-status" onchange="onIncidentStatusChange()">
+                    <option value="ongoing">On going</option>
+                    <option value="observation">Observing</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="incident-started-at">Started At</label>
+                <input type="datetime-local" id="incident-started-at">
+            </div>
+            <div class="form-group" id="incident-resolved-at-group" style="display:none">
+                <label for="incident-resolved-at">Resolved At</label>
+                <input type="datetime-local" id="incident-resolved-at">
+            </div>
+            <div class="form-group">
+                <label>Status Updates</label>
+                <div id="incident-updates-list"></div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
+                    <span id="incident-update-time-toggle" style="font-size:0.8125rem;color:var(--text-muted);white-space:nowrap;cursor:pointer" onclick="showUpdateTimeInput()">Now <span style="opacity:0.6">✎</span></span>
+                    <input type="datetime-local" id="incident-update-time-input" style="font-size:0.8125rem;padding:0.375rem 0.5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);width:auto;display:none">
+                    <span id="incident-update-time-close" style="cursor:pointer;font-size:0.875rem;color:var(--text-muted);display:none" onclick="hideUpdateTimeInput()">&times;</span>
+                    <textarea id="incident-update-input" rows="1" placeholder="Describe progress or resolution..." style="flex:1;min-width:180px;resize:vertical"></textarea>
+                    <button type="button" class="btn" onclick="addIncidentUpdate()">+ Add</button>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-gray" onclick="closeModal('incident-modal')">Cancel</button>
+                <button type="button" class="btn" onclick="saveIncident()" data-modal-save>Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
@@ -2030,6 +2408,10 @@ function serveDashboard(): void {
                 <div class="help-section">
                     <h4>Status Page</h4>
                     <p>The public status page (<strong>/</strong>) shows a read-only view of all visible sites. No login required. Auto-refreshes every 30 seconds.</p>
+                </div>
+                <div class="help-section">
+                    <h4>Incidents</h4>
+                    <p>Report incidents that affect your services. Each incident has a status (<strong>On going</strong>, <strong>Observing</strong>, or <strong>Resolved</strong>) and can include timestamped status updates to communicate progress. Active and recently resolved incidents (within 24h) appear on the public status page.</p>
                 </div>
                 <div class="help-section">
                     <h4>Notifications</h4>
@@ -2069,6 +2451,7 @@ just stop-cron     # stop background cron</pre>
                     <table class="help-table">
                         <tr><td><kbd>S</kbd></td><td>Websites</td></tr>
                         <tr><td><kbd>G</kbd></td><td>Groups</td></tr>
+                        <tr><td><kbd>I</kbd></td><td>Incidents</td></tr>
                         <tr><td><kbd>A</kbd></td><td>Account</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>,</kbd></td><td>App Settings</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>S</kbd></td><td>Save (in any form)</td></tr>
@@ -2304,7 +2687,46 @@ just stop-cron     # stop background cron</pre>
         applyTheme();
 
         const CSRF = '<?= $_SESSION['csrf_token'] ?? '' ?>';
+        let APP_LOCALE = '<?= htmlspecialchars($dashLocale) ?>' || undefined;
         let APP_STATUS = {};
+
+        function fmtDate(utcStr) {
+            if (!utcStr) return '—';
+            const d = new Date(utcStr + 'Z');
+            if (APP_LOCALE === 'UTC') return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+            return d.toLocaleString(APP_LOCALE || undefined, { timeZone: APP_LOCALE === 'UTC' ? 'UTC' : undefined });
+        }
+
+        function fmtTime(utcStr) {
+            if (!utcStr) return '';
+            const d = new Date(utcStr + 'Z');
+            if (APP_LOCALE === 'UTC') return d.toISOString().slice(11, 16) + ' UTC';
+            return d.toLocaleTimeString(APP_LOCALE || undefined, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: APP_LOCALE === 'UTC' ? 'UTC' : undefined });
+        }
+
+        function fmtDateBare(utcStr) {
+            if (!utcStr) return '—';
+            const d = new Date(utcStr + 'Z');
+            if (APP_LOCALE === 'UTC') return d.toISOString().slice(0, 16).replace('T', ' ');
+            return d.toLocaleString(APP_LOCALE || undefined, { timeZone: APP_LOCALE === 'UTC' ? 'UTC' : undefined });
+        }
+
+        function fmtResolvedRelative(startStr, endStr) {
+            if (!startStr || !endStr) return '—';
+            const s = new Date(startStr + 'Z');
+            const e = new Date(endStr + 'Z');
+            if (APP_LOCALE === 'UTC') {
+                const sDate = s.toISOString().slice(0, 10);
+                const eDate = e.toISOString().slice(0, 10);
+                const eTime = e.toISOString().slice(11, 16);
+                const pad = n => String(n).padStart(2, '0');
+                if (sDate === eDate) return eTime;
+                if (sDate.slice(0, 7) === eDate.slice(0, 7)) return `${pad(e.getUTCDate())} ${eTime}`;
+                if (sDate.slice(0, 4) === eDate.slice(0, 4)) return `${pad(e.getUTCMonth() + 1)}-${pad(e.getUTCDate())} ${eTime}`;
+                return `${eDate} ${eTime}`;
+            }
+            return e.toLocaleString(APP_LOCALE || undefined);
+        }
 
         async function api(action, data = {}, method = 'GET') {
             const opts = {
@@ -2328,6 +2750,7 @@ just stop-cron     # stop background cron</pre>
             history.replaceState(null, '', '#' + id);
             if (id === 'sites') loadSites();
             if (id === 'groups') loadGroups();
+            if (id === 'incidents') loadIncidents();
         }
 
         function showHelp() {
@@ -2571,8 +2994,7 @@ just stop-cron     # stop background cron</pre>
         function renderChecks(checks) {
             let html = '<table class="checks-table"><thead><tr><th>Time</th><th>Status</th><th>Code</th><th>Response</th><th>Message</th></tr></thead><tbody>';
             for (const c of checks) {
-                const t = new Date(c.checked_at);
-                const time = t.toLocaleString();
+                const time = fmtDate(c.checked_at);
                 html += `<tr>
                     <td>${time}</td>
                     <td><span class="status-badge ${c.status}">${c.status}</span></td>
@@ -2648,6 +3070,7 @@ just stop-cron     # stop background cron</pre>
 
             if (e.key === 's' || e.key === 'S') { showSection('sites'); return; }
             if (e.key === 'g' || e.key === 'G') { showSection('groups'); return; }
+            if (e.key === 'i' || e.key === 'I') { showSection('incidents'); return; }
             if (e.key === 'a' || e.key === 'A') { showAccountModal(); return; }
             if (e.key === '?') { showHelp(); return; }
             if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); showSettingsModal(); }
@@ -2872,6 +3295,245 @@ just stop-cron     # stop background cron</pre>
             loadGroups();
         });
 
+        // ─── INCIDENTS ───────────────────────────────────
+        let _editIncidentId = null;
+        let _incidentUpdates = [];
+        let _elapsedTimer = null;
+
+        function formatElapsed(ms) {
+            if (ms < 0) ms = 0;
+            const s = Math.floor(ms / 1000);
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            if (d > 0) return `${d}d ${h}h ${m}m`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        }
+
+        function updateElapsedTimers() {
+            document.querySelectorAll('[data-elapsed-start]').forEach(el => {
+                const start = parseInt(el.dataset.elapsedStart);
+                const end = el.dataset.elapsedEnd ? parseInt(el.dataset.elapsedEnd) : Date.now();
+                el.textContent = formatElapsed(end - start);
+            });
+        }
+
+        async function loadIncidents() {
+            const data = await api('list_incidents');
+            const list = document.getElementById('incidents-list');
+            const incidents = data.incidents || [];
+            if (incidents.length === 0) {
+                list.innerHTML = '<div class="empty">No incidents reported</div>';
+                if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null; }
+                return;
+            }
+            const statusLabels = { ongoing: 'On going', observation: 'Observing', resolved: 'Resolved' };
+            const statusClasses = { ongoing: 'ongoing', observation: 'observation', resolved: 'resolved' };
+            const tzLabel = APP_LOCALE === 'UTC' ? ' (UTC)' : '';
+            let html = `<table><thead><tr><th>Status</th><th>Title</th><th class="hide-mobile">Started${tzLabel}</th><th class="hide-mobile">Resolved</th><th>Elapsed</th><th>Actions</th></tr></thead><tbody>`;
+            for (const i of incidents) {
+                const started = fmtDateBare(i.started_at);
+                const resolved = i.resolved_at ? fmtResolvedRelative(i.started_at, i.resolved_at) : '—';
+                const startMs = i.started_at ? new Date(i.started_at + 'Z').getTime() : 0;
+                const endMs = i.resolved_at ? new Date(i.resolved_at + 'Z').getTime() : '';
+                const elapsed = startMs ? formatElapsed((endMs || Date.now()) - startMs) : '—';
+                html += `<tr>
+                    <td><span class="status-badge ${statusClasses[i.status]}">${statusLabels[i.status]}</span></td>
+                    <td>${escapeHtml(i.title)}</td>
+                    <td class="hide-mobile">${started}</td>
+                    <td class="hide-mobile">${resolved}</td>
+                    <td><span data-elapsed-start="${startMs}"${endMs ? ` data-elapsed-end="${endMs}"` : ''}>${elapsed}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outlined" onclick="editIncident(${i.id})">Update</button>
+                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteIncident(${i.id}, '${escapeHtml(i.title).replace(/'/g, "\\'")}')">Delete</button>
+                    </td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            list.innerHTML = html;
+
+            if (_elapsedTimer) clearInterval(_elapsedTimer);
+            _elapsedTimer = setInterval(updateElapsedTimers, 60000);
+        }
+
+        function showIncidentModal(incident = null) {
+            _editIncidentId = incident ? incident.id : null;
+            document.getElementById('incident-modal-title').textContent = incident ? 'Edit Incident' : 'New Incident';
+            document.getElementById('incident-title').value = incident ? incident.title : '';
+            document.getElementById('incident-status').value = incident ? incident.status : 'ongoing';
+
+            const now = new Date();
+            const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            if (incident && incident.started_at) {
+                document.getElementById('incident-started-at').value = incident.started_at.replace(' ', 'T').slice(0, 16);
+            } else {
+                document.getElementById('incident-started-at').value = localIso;
+            }
+            if (incident && incident.resolved_at) {
+                document.getElementById('incident-resolved-at').value = incident.resolved_at.replace(' ', 'T').slice(0, 16);
+            } else {
+                document.getElementById('incident-resolved-at').value = '';
+            }
+
+            _incidentUpdates = incident && incident.updates ? incident.updates.map(u => ({ id: u.id, description: u.description, created_at: u.created_at })) : [];
+            renderIncidentUpdates();
+            onIncidentStatusChange();
+            document.getElementById('incident-modal').classList.add('active');
+            focusFirstInput('incident-modal');
+        }
+
+        function onIncidentStatusChange() {
+            const status = document.getElementById('incident-status').value;
+            const group = document.getElementById('incident-resolved-at-group');
+            group.style.display = status === 'resolved' ? '' : 'none';
+            if (status === 'resolved' && !document.getElementById('incident-resolved-at').value) {
+                const now = new Date();
+                document.getElementById('incident-resolved-at').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            }
+        }
+
+        function renderIncidentUpdates() {
+            const container = document.getElementById('incident-updates-list');
+            if (_incidentUpdates.length === 0) {
+                container.innerHTML = '<div style="font-size:0.8125rem;color:var(--text-muted);padding:0.5rem 0">No updates yet</div>';
+                return;
+            }
+            container.innerHTML = _incidentUpdates.map((u, i) => {
+                const time = u.created_at ? fmtTime(u.created_at) : 'now';
+                return `<div style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.375rem 0;border-bottom:1px solid var(--border)" id="incident-update-row-${i}">
+                    <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;margin-top:2px" id="incident-update-time-${i}">${time}</span>
+                    <span style="flex:1;font-size:0.8125rem" id="incident-update-text-${i}">${escapeHtml(u.description)}</span>
+                    <button type="button" class="btn btn-sm btn-outlined" onclick="editIncidentUpdateInline(${i})" style="padding:0.125rem 0.375rem;font-size:0.75rem">✎</button>
+                    <button type="button" class="btn btn-sm btn-outlined btn-outlined-danger" onclick="removeIncidentUpdate(${i})" style="padding:0.125rem 0.375rem;font-size:0.75rem">&times;</button>
+                </div>`;
+            }).join('');
+        }
+
+        function editIncidentUpdateInline(index) {
+            const u = _incidentUpdates[index];
+            const row = document.getElementById(`incident-update-row-${index}`);
+            if (!row) return;
+            const timeVal = u.created_at ? u.created_at.replace(' ', 'T').slice(0, 16) : '';
+            row.innerHTML = `
+                <input type="datetime-local" value="${timeVal}" style="font-size:0.75rem;padding:0.25rem 0.375rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);width:auto" id="incident-update-edit-time-${index}">
+                <input type="text" value="${escapeHtml(u.description)}" style="flex:1;font-size:0.8125rem;padding:0.25rem 0.375rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)" id="incident-update-edit-desc-${index}" onkeydown="if(event.key==='Enter'){saveIncidentUpdateInline(${index})}">
+                <button type="button" class="btn btn-sm" onclick="saveIncidentUpdateInline(${index})" style="padding:0.125rem 0.5rem;font-size:0.75rem">Save</button>
+                <button type="button" class="btn btn-sm btn-outlined" onclick="renderIncidentUpdates()" style="padding:0.125rem 0.375rem;font-size:0.75rem">Cancel</button>
+            `;
+            row.querySelector(`#incident-update-edit-desc-${index}`).focus();
+        }
+
+        async function saveIncidentUpdateInline(index) {
+            const desc = document.getElementById(`incident-update-edit-desc-${index}`).value.trim();
+            const timeRaw = document.getElementById(`incident-update-edit-time-${index}`).value;
+            if (!desc) return;
+            const createdAt = timeRaw ? timeRaw.replace('T', ' ') + ':00' : null;
+            _incidentUpdates[index].description = desc;
+            if (createdAt) _incidentUpdates[index].created_at = createdAt;
+            if (_incidentUpdates[index].id) {
+                const payload = { id: _incidentUpdates[index].id, description: desc };
+                if (createdAt) payload.created_at = createdAt;
+                await api('update_incident_update', payload, 'POST');
+            }
+            renderIncidentUpdates();
+        }
+
+        function showUpdateTimeInput() {
+            const now = new Date();
+            const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            document.getElementById('incident-update-time-input').value = local;
+            document.getElementById('incident-update-time-input').style.display = '';
+            document.getElementById('incident-update-time-close').style.display = '';
+            document.getElementById('incident-update-time-toggle').style.display = 'none';
+        }
+
+        function hideUpdateTimeInput() {
+            document.getElementById('incident-update-time-input').style.display = 'none';
+            document.getElementById('incident-update-time-input').value = '';
+            document.getElementById('incident-update-time-close').style.display = 'none';
+            document.getElementById('incident-update-time-toggle').style.display = '';
+        }
+
+        async function addIncidentUpdate() {
+            const input = document.getElementById('incident-update-input');
+            const timeInput = document.getElementById('incident-update-time-input');
+            const desc = input.value.trim();
+            if (!desc) return;
+
+            const timeRaw = timeInput.value;
+            const createdAt = timeRaw ? timeRaw.replace('T', ' ') + ':00' : null;
+
+            if (_editIncidentId) {
+                const payload = { incident_id: _editIncidentId, description: desc };
+                if (createdAt) payload.created_at = createdAt;
+                const res = await api('create_incident_update', payload, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                _incidentUpdates.push({ id: res.id, description: desc, created_at: createdAt || new Date().toISOString().replace('T', ' ').slice(0, 19) });
+            } else {
+                _incidentUpdates.push({ id: null, description: desc, created_at: createdAt });
+            }
+            input.value = '';
+            hideUpdateTimeInput();
+            renderIncidentUpdates();
+        }
+
+        async function removeIncidentUpdate(index) {
+            const u = _incidentUpdates[index];
+            if (u.id) {
+                await api('delete_incident_update', { id: u.id }, 'POST');
+            }
+            _incidentUpdates.splice(index, 1);
+            renderIncidentUpdates();
+        }
+
+        async function editIncident(id) {
+            const data = await api('list_incidents');
+            const incident = (data.incidents || []).find(i => i.id === id);
+            if (!incident) return;
+            showIncidentModal(incident);
+        }
+
+        async function deleteIncident(id, title) {
+            if (!await showConfirm('Delete Incident', `Delete incident "${title}"? All status updates will also be removed.`)) return;
+            await api('delete_incident', { id }, 'POST');
+            showToast('Incident deleted');
+            loadIncidents();
+        }
+
+        async function saveIncident() {
+            const title = document.getElementById('incident-title').value.trim();
+            const status = document.getElementById('incident-status').value;
+            const startedAt = document.getElementById('incident-started-at').value.replace('T', ' ') + ':00';
+            const resolvedAtRaw = document.getElementById('incident-resolved-at').value;
+            const resolvedAt = status === 'resolved' && resolvedAtRaw ? resolvedAtRaw.replace('T', ' ') + ':00' : null;
+
+            if (!title) { showToast('Title is required', 'error'); return; }
+            if (status === 'resolved' && !resolvedAt) { showToast('Resolved At is required', 'error'); return; }
+
+            const payload = { title, status, started_at: startedAt };
+            if (resolvedAt) payload.resolved_at = resolvedAt;
+
+            if (_editIncidentId) {
+                payload.id = _editIncidentId;
+                const res = await api('update_incident', payload, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                showToast('Incident updated');
+            } else {
+                const res = await api('create_incident', payload, 'POST');
+                if (res.error) { showToast(res.error, 'error'); return; }
+                const newId = res.id;
+                for (const u of _incidentUpdates) {
+                    if (!u.id) {
+                        await api('create_incident_update', { incident_id: newId, description: u.description }, 'POST');
+                    }
+                }
+                showToast('Incident created');
+            }
+            closeModal('incident-modal');
+            loadIncidents();
+        }
+
         // ─── ACCOUNT ─────────────────────────────────────
         function switchAccountTab(tab) {
             document.querySelectorAll('#account-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
@@ -2977,10 +3639,29 @@ just stop-cron     # stop background cron</pre>
                 <button class="btn btn-sm btn-gray" onclick="checkForUpdates()" id="check-update-btn">Check for updates</button>
             `;
 
+            const localeOptions = [
+                { value: '', label: 'Browser default' },
+                { value: 'UTC', label: 'UTC (2026-08-27 14:30 UTC)' },
+                { value: 'ja-JP', label: 'Japanese (2026/08/27 14:30)' },
+                { value: 'en-US', label: 'English US (8/27/2026, 2:30 PM)' },
+                { value: 'en-GB', label: 'English UK (27/08/2026, 14:30)' },
+                { value: 'de-DE', label: 'German (27.08.2026, 14:30)' },
+                { value: 'fr-FR', label: 'French (27/08/2026 14:30)' },
+                { value: 'pt-BR', label: 'Portuguese BR (27/08/2026 14:30)' },
+                { value: 'ko-KR', label: 'Korean (2026. 8. 27. 14:30)' },
+                { value: 'zh-CN', label: 'Chinese (2026/8/27 14:30)' },
+            ];
+            const currentLocale = settings.locale || '';
+            const localeSelect = localeOptions.map(o => `<option value="${o.value}"${o.value === currentLocale ? ' selected' : ''}>${o.label}</option>`).join('');
+
             container.innerHTML = `
                 <div class="form-group">
                     <label for="settings-app-name">Status Page Title</label>
                     <input type="text" id="settings-app-name" value="${escapeHtml(settings.app_name || '')}">
+                </div>
+                <div class="form-group">
+                    <label for="settings-locale">Date Format</label>
+                    <select id="settings-locale">${localeSelect}</select>
                 </div>
                 <div class="form-group">
                     <label for="settings-retention">Retention (days)</label>
@@ -3020,11 +3701,14 @@ just stop-cron     # stop background cron</pre>
         }
 
         async function saveSettings() {
+            const locale = document.getElementById('settings-locale').value;
             const res = await api('update_settings', {
                 app_name: document.getElementById('settings-app-name').value,
+                locale: locale,
                 retention_days: parseInt(document.getElementById('settings-retention').value),
             }, 'POST');
             if (res.error) { showToast(res.error, 'error'); return; }
+            APP_LOCALE = locale || undefined;
             showToast('Settings saved');
             closeModal('settings-modal');
         }
@@ -3156,7 +3840,16 @@ just stop-cron     # stop background cron</pre>
                 if (countdown <= 0) { cb(); countdown = interval; }
             }, 1000);
         }
-        startRefreshTimer('sites-refresh', 30, loadSites);
+        const _initSection = location.hash.replace('#', '') || 'sites';
+        if (['sites', 'groups', 'incidents'].includes(_initSection)) {
+            showSection(_initSection);
+        } else {
+            loadSites();
+        }
+        startRefreshTimer('sites-refresh', 30, () => {
+            const active = document.querySelector('.section.active');
+            if (active && active.id === 'sites') loadSites();
+        });
     </script>
 </body>
 </html>
@@ -3680,6 +4373,166 @@ function apiTestWebhook(): void {
 }
 
 // ============================================================================
+// API: INCIDENTS
+// ============================================================================
+
+function apiListIncidents(): void {
+    requireAuth();
+    $db = getDb();
+    $incidents = $db->query("
+        SELECT * FROM incidents
+        ORDER BY
+            CASE status WHEN 'ongoing' THEN 0 WHEN 'observation' THEN 1 ELSE 2 END,
+            updated_at DESC
+    ")->fetchAll();
+
+    foreach ($incidents as &$incident) {
+        $stmt = $db->prepare("SELECT * FROM incident_updates WHERE incident_id = ? ORDER BY created_at ASC");
+        $stmt->execute([$incident['id']]);
+        $incident['updates'] = $stmt->fetchAll();
+    }
+    unset($incident);
+
+    jsonResponse(['incidents' => $incidents]);
+}
+
+function apiCreateIncident(): void {
+    requireAuth();
+    $input = getInput();
+    $title = trim($input['title'] ?? '');
+    $status = $input['status'] ?? '';
+    $startedAt = $input['started_at'] ?? date('Y-m-d H:i:s');
+    $resolvedAt = $input['resolved_at'] ?? null;
+
+    if (!$title) jsonResponse(['error' => 'Title is required'], 400);
+    if (!in_array($status, ['ongoing', 'observation', 'resolved'])) {
+        jsonResponse(['error' => 'Invalid status'], 400);
+    }
+    if ($status === 'resolved' && !$resolvedAt) {
+        jsonResponse(['error' => 'resolved_at is required when status is resolved'], 400);
+    }
+
+    $db = getDb();
+    $stmt = $db->prepare("INSERT INTO incidents (title, status, started_at, resolved_at) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$title, $status, $startedAt, $resolvedAt]);
+    jsonResponse(['id' => (int) $db->lastInsertId()]);
+}
+
+function apiUpdateIncident(): void {
+    requireAuth();
+    $input = getInput();
+    $id = (int) ($input['id'] ?? 0);
+    if (!$id) jsonResponse(['error' => 'Missing id'], 400);
+
+    $db = getDb();
+    $existing = $db->prepare("SELECT id FROM incidents WHERE id = ?");
+    $existing->execute([$id]);
+    if (!$existing->fetch()) jsonResponse(['error' => 'Not found'], 404);
+
+    $title = trim($input['title'] ?? '');
+    $status = $input['status'] ?? '';
+    $startedAt = $input['started_at'] ?? null;
+    $resolvedAt = $input['resolved_at'] ?? null;
+
+    if (!$title) jsonResponse(['error' => 'Title is required'], 400);
+    if (!in_array($status, ['ongoing', 'observation', 'resolved'])) {
+        jsonResponse(['error' => 'Invalid status'], 400);
+    }
+    if ($status === 'resolved' && !$resolvedAt) {
+        jsonResponse(['error' => 'resolved_at is required when status is resolved'], 400);
+    }
+
+    $stmt = $db->prepare("UPDATE incidents SET title = ?, status = ?, started_at = COALESCE(?, started_at), resolved_at = ?, updated_at = datetime('now') WHERE id = ?");
+    $stmt->execute([$title, $status, $startedAt, $resolvedAt, $id]);
+    jsonResponse(['ok' => true]);
+}
+
+function apiDeleteIncident(): void {
+    requireAuth();
+    $input = getInput();
+    $id = (int) ($input['id'] ?? 0);
+    if (!$id) jsonResponse(['error' => 'Missing id'], 400);
+
+    $db = getDb();
+    $existing = $db->prepare("SELECT id FROM incidents WHERE id = ?");
+    $existing->execute([$id]);
+    if (!$existing->fetch()) jsonResponse(['error' => 'Not found'], 404);
+
+    $db->prepare("DELETE FROM incidents WHERE id = ?")->execute([$id]);
+    jsonResponse(['ok' => true]);
+}
+
+function apiCreateIncidentUpdate(): void {
+    requireAuth();
+    $input = getInput();
+    $incidentId = (int) ($input['incident_id'] ?? 0);
+    $description = trim($input['description'] ?? '');
+
+    if (!$description) jsonResponse(['error' => 'Description is required'], 400);
+
+    $db = getDb();
+    $existing = $db->prepare("SELECT id FROM incidents WHERE id = ?");
+    $existing->execute([$incidentId]);
+    if (!$existing->fetch()) jsonResponse(['error' => 'Incident not found'], 404);
+
+    $createdAt = $input['created_at'] ?? null;
+    if ($createdAt) {
+        $stmt = $db->prepare("INSERT INTO incident_updates (incident_id, description, created_at) VALUES (?, ?, ?)");
+        $stmt->execute([$incidentId, $description, $createdAt]);
+    } else {
+        $stmt = $db->prepare("INSERT INTO incident_updates (incident_id, description) VALUES (?, ?)");
+        $stmt->execute([$incidentId, $description]);
+    }
+
+    $db->prepare("UPDATE incidents SET updated_at = datetime('now') WHERE id = ?")->execute([$incidentId]);
+
+    jsonResponse(['id' => (int) $db->lastInsertId()]);
+}
+
+function apiUpdateIncidentUpdate(): void {
+    requireAuth();
+    $input = getInput();
+    $id = (int) ($input['id'] ?? 0);
+    $description = trim($input['description'] ?? '');
+
+    if (!$description) jsonResponse(['error' => 'Description is required'], 400);
+
+    $db = getDb();
+    $existing = $db->prepare("SELECT id, incident_id FROM incident_updates WHERE id = ?");
+    $existing->execute([$id]);
+    $row = $existing->fetch();
+    if (!$row) jsonResponse(['error' => 'Not found'], 404);
+
+    $createdAt = $input['created_at'] ?? null;
+    if ($createdAt) {
+        $db->prepare("UPDATE incident_updates SET description = ?, created_at = ? WHERE id = ?")->execute([$description, $createdAt, $id]);
+    } else {
+        $db->prepare("UPDATE incident_updates SET description = ? WHERE id = ?")->execute([$description, $id]);
+    }
+    $db->prepare("UPDATE incidents SET updated_at = datetime('now') WHERE id = ?")->execute([$row['incident_id']]);
+
+    jsonResponse(['ok' => true]);
+}
+
+function apiDeleteIncidentUpdate(): void {
+    requireAuth();
+    $input = getInput();
+    $id = (int) ($input['id'] ?? 0);
+    if (!$id) jsonResponse(['error' => 'Missing id'], 400);
+
+    $db = getDb();
+    $existing = $db->prepare("SELECT id, incident_id FROM incident_updates WHERE id = ?");
+    $existing->execute([$id]);
+    $row = $existing->fetch();
+    if (!$row) jsonResponse(['error' => 'Not found'], 404);
+
+    $db->prepare("DELETE FROM incident_updates WHERE id = ?")->execute([$id]);
+    $db->prepare("UPDATE incidents SET updated_at = datetime('now') WHERE id = ?")->execute([$row['incident_id']]);
+
+    jsonResponse(['ok' => true]);
+}
+
+// ============================================================================
 // API: STATUS PAGE
 // ============================================================================
 
@@ -3783,7 +4636,50 @@ function apiStatusPage(): void {
         }
     }
 
-    jsonResponse(['groups' => $groups, 'sites' => $sites, 'overall' => $overall]);
+    // Active incidents (ongoing + observation)
+    $activeIncidents = $db->query("
+        SELECT * FROM incidents
+        WHERE status IN ('ongoing', 'observation')
+        ORDER BY CASE status WHEN 'ongoing' THEN 0 ELSE 1 END, started_at DESC
+    ")->fetchAll();
+
+    // Recently resolved (within 24h)
+    $recentResolved = $db->query("
+        SELECT * FROM incidents
+        WHERE status = 'resolved' AND resolved_at > datetime('now', '-24 hours')
+        ORDER BY resolved_at DESC
+    ")->fetchAll();
+
+    // History (resolved > 24h, last 90 days, capped at 20)
+    $history = $db->query("
+        SELECT * FROM incidents
+        WHERE status = 'resolved'
+          AND resolved_at <= datetime('now', '-24 hours')
+          AND resolved_at > datetime('now', '-90 days')
+        ORDER BY resolved_at DESC
+        LIMIT 20
+    ")->fetchAll();
+
+    $addUpdates = function (&$list) use ($db) {
+        foreach ($list as &$incident) {
+            $stmt = $db->prepare("SELECT id, description, created_at FROM incident_updates WHERE incident_id = ? ORDER BY created_at ASC");
+            $stmt->execute([$incident['id']]);
+            $incident['updates'] = $stmt->fetchAll();
+        }
+        unset($incident);
+    };
+    $addUpdates($activeIncidents);
+    $addUpdates($recentResolved);
+    $addUpdates($history);
+
+    jsonResponse([
+        'groups' => $groups,
+        'sites' => $sites,
+        'overall' => $overall,
+        'incidents' => array_values($activeIncidents),
+        'recent_resolved' => array_values($recentResolved),
+        'incidents_history' => array_values($history),
+    ]);
 }
 
 // ============================================================================

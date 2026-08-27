@@ -18,7 +18,10 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 - Per-group uptime averages on the status page
 - Per-site URL visibility toggle (hide URLs from the public status page)
 - Drag-and-drop group and website reordering
-- Webhook notifications (Slack, Telegram, generic JSON)
+- Incident tracking with status updates (On going, Observing, Resolved)
+- Active and recently resolved incidents on the public status page
+- Webhook notifications with message templates (Slack, Telegram, generic JSON)
+- Locale-aware date formatting (UTC, Japanese, English, German, French, Portuguese, Korean, Chinese)
 - Public status page (no login required)
 - Customizable status page title (independent from dashboard branding)
 - Dark/light theme toggle
@@ -154,11 +157,23 @@ Websites can be temporarily disabled without deleting them. Disabled websites ar
 
 Groups let you organize websites logically (e.g., Production, Staging), when presenting them in the Status Page. Drag the `⠿` handle to reorder groups. Websites can be assigned to a group via the website edit modal.
 
+### Incidents
+
+Report incidents that affect your services. Each incident has a status (**On going**, **Observing**, or **Resolved**) and can include timestamped status updates to communicate progress.
+
+- **On going** — active incident, currently affecting services
+- **Observing** — situation being monitored after a fix
+- **Resolved** — incident is over
+
+Active and recently resolved incidents (within 24h) appear on the public status page. Older resolved incidents are available in a collapsible "Incidents History" section (last 90 days, capped at 20).
+
 ### Status Page
 
 The public status page (`/`) shows a read-only view of all visible sites, organized by group. No login required. It auto-refreshes every 30 seconds.
 
 At the top, an overall status indicator shows system health (Operational, Degraded, Severely Degraded, or Down) alongside uptime percentages for the last 24 hours, 7 days, 30 days, and 90 days. Each group also displays its own 24h average uptime in the header.
+
+Active incidents (On going, Observing) appear above the site list. Recently resolved incidents (within 24h) appear below. Older resolved incidents are in a collapsible history section.
 
 The status page title can be customized in Settings (independently from the dashboard, which always shows "Uptime").
 
@@ -169,6 +184,22 @@ Only sites with "visible" enabled appear on the status page.
 **Webhooks** are configured per website (website edit modal, Webhooks tab). Supported types: Slack (Incoming Webhook), Telegram (Bot API), and generic JSON POST. You can test webhooks before saving.
 
 Webhook notifications include a 5-minute spam cooldown per website to avoid alert floods.
+
+**Message Templates** are supported for Slack and Telegram. Use placeholders to customize notification text:
+
+| Placeholder | Value |
+|---|---|
+| `{{event}}` | `down` or `recover` |
+| `{{site_name}}` | Website name |
+| `{{url}}` | Website URL |
+| `{{message}}` | Check error message |
+| `{{timestamp}}` | ISO 8601 timestamp |
+
+Spaces inside braces are optional: `{{ url }}` works the same as `{{url}}`.
+
+**Telegram** requires a Bot Token (from [@BotFather](https://t.me/BotFather)) and Chat ID. The API endpoint is auto-constructed — no manual URL needed. Messages are sent as MarkdownV2, so template syntax like `**bold**` and `_italic_` is rendered.
+
+**Slack** requires a webhook URL from [api.slack.com/apps](https://api.slack.com/apps). Messages are sent as plain text.
 
 **Generic JSON payload example:**
 
@@ -181,8 +212,6 @@ Webhook notifications include a 5-minute spam cooldown per website to avoid aler
   "timestamp": "2026-08-20T02:00:00+00:00"
 }
 ```
-
-**Slack/Telegram payload:** A formatted text message with an emoji indicator (🔴 for down, 🟢 for recover).
 
 ### User-Agent
 
@@ -204,6 +233,7 @@ Check history is retained for 180 days by default (configurable in App Settings)
 |----------|--------|
 | `S` | Websites |
 | `G` | Groups |
+| `I` | Incidents |
 | `A` | Account |
 | `⌘ ,` | App Settings |
 | `⌘ S` | Save (in any form) |

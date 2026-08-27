@@ -72,5 +72,7 @@ Session checkpoints for continuity across sessions.
 - **Backend**: `formatWebhookPayload()` processes templates for both Slack and Telegram; `sendNotifications()` overrides URL for Telegram; `sendWebhook()` simplified (removed unused `$type` param)
 - **Edit webhook**: Edit button per webhook item; reuses form with hidden edit ID; `update_webhook` API for edits
 - **Telegram MarkdownV2**: `parse_mode: MarkdownV2` with auto-escaping of special characters
-- **Template flexibility**: `\{\{\s*key\s*\}\}` regex supports `{{url}}` and `{{ url }}` (optional spaces)
-- **Tests**: 15 new test cases for Telegram webhook validation; total 187 (all passing)
+- **Template flexibility**: `\{\{\s*key\s*\}\}` regex supports `{{url}}` and `{{ url }}` (optional spaces); template values escaped, template syntax preserved
+- **Incidents system** (restored from backup): `incidents` + `incident_updates` tables (DB v6→v7); full CRUD API; status page shows active/recent/history; dashboard tab with modal
+- **Locale/date formatting**: `locale` setting; `fmtDate()`, `fmtTime()`, `fmtDateBare()`, `fmtResolvedRelative()`; 10 locale options (UTC, ja-JP, en-US, en-GB, de-DE, fr-FR, pt-BR, ko-KR, zh-CN)
+- **Tests**: 262 total (all passing); 75 new tests covering webhooks, incidents, incident updates, status page incident filtering (time-based buckets)

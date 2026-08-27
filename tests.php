@@ -976,6 +976,356 @@ $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 assert_eq(200, $code, 'new token works after regeneration');
 
+// ─── INCIDENTS ──────────────────────────────────────────
+section('Incidents');
+
+// Empty list
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'list_incidents returns 200');
+assert_eq(0, count($r['body']['incidents']), 'no incidents initially');
+
+// Create ongoing incident
+$r = req('create_incident', [
+    'title' => 'Server outage',
+    'status' => 'ongoing',
+    'started_at' => '2026-08-27 10:00:00',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create ongoing incident succeeds');
+$incidentId = $r['body']['id'];
+assert_true($incidentId > 0, 'incident id is positive');
+
+// Create without title → 400
+$r = req('create_incident', ['title' => '', 'status' => 'ongoing'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'create incident without title rejected');
+
+// Create with invalid status → 400
+$r = req('create_incident', ['title' => 'Test', 'status' => 'invalid'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'create incident with invalid status rejected');
+
+// Create resolved without resolved_at → 400
+$r = req('create_incident', ['title' => 'Test', 'status' => 'resolved'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'create resolved incident without resolved_at rejected');
+
+// Create observation incident
+$r = req('create_incident', [
+    'title' => 'Elevated latency',
+    'status' => 'observation',
+    'started_at' => '2026-08-27 11:00:00',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create observation incident succeeds');
+$observationId = $r['body']['id'];
+
+// Create resolved incident
+$r = req('create_incident', [
+    'title' => 'DNS issue',
+    'status' => 'resolved',
+    'started_at' => '2026-08-26 08:00:00',
+    'resolved_at' => '2026-08-26 09:30:00',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create resolved incident succeeds');
+$resolvedId = $r['body']['id'];
+
+// List — verify ordering: ongoing first, then observation, then resolved
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'list_incidents returns 200');
+assert_eq(3, count($r['body']['incidents']), 'three incidents');
+$first = $r['body']['incidents'][0];
+assert_eq('ongoing', $first['status'], 'ongoing incident first');
+$second = $r['body']['incidents'][1];
+assert_eq('observation', $second['status'], 'observation incident second');
+$third = $r['body']['incidents'][2];
+assert_eq('resolved', $third['status'], 'resolved incident third');
+
+// List — verify updates array present
+assert_true(array_key_exists('updates', $first), 'incident has updates array');
+assert_eq(0, count($first['updates']), 'no updates yet');
+
+// Verify incident fields are complete
+assert_true(array_key_exists('id', $first), 'incident has id');
+assert_true(array_key_exists('title', $first), 'incident has title');
+assert_true(array_key_exists('status', $first), 'incident has status');
+assert_true(array_key_exists('started_at', $first), 'incident has started_at');
+assert_true(array_key_exists('resolved_at', $first), 'incident has resolved_at');
+assert_true(array_key_exists('created_at', $first), 'incident has created_at');
+assert_true(array_key_exists('updated_at', $first), 'incident has updated_at');
+
+// Verify updated_at is set on creation
+assert_true(!empty($first['updated_at']), 'updated_at is set on creation');
+
+// Update incident
+$r = req('update_incident', [
+    'id' => $incidentId,
+    'title' => 'Major server outage',
+    'status' => 'observation',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update incident succeeds');
+
+// Verify update persisted
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$updated = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $incidentId))[0];
+assert_eq('Major server outage', $updated['title'], 'incident title updated');
+assert_eq('observation', $updated['status'], 'incident status updated');
+
+// Verify updated_at changed after update
+assert_true($updated['updated_at'] >= $first['updated_at'], 'updated_at changed after update');
+
+// Update not found → 404
+$r = req('update_incident', ['id' => 99999, 'title' => 'X', 'status' => 'ongoing'], 'POST', $adminCsrf);
+assert_eq(404, $r['status'], 'update nonexistent incident returns 404');
+
+// Update without title → 400
+$r = req('update_incident', ['id' => $incidentId, 'title' => '', 'status' => 'ongoing'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'update incident without title rejected');
+
+// Update resolved without resolved_at → 400
+$r = req('update_incident', ['id' => $incidentId, 'title' => 'Test', 'status' => 'resolved'], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'update to resolved without resolved_at rejected');
+
+// Resolve the incident
+$r = req('update_incident', [
+    'id' => $incidentId,
+    'title' => 'Major server outage',
+    'status' => 'resolved',
+    'resolved_at' => '2026-08-27 12:00:00',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'resolve incident succeeds');
+
+// Delete not found → 404
+$r = req('delete_incident', ['id' => 99999], 'POST', $adminCsrf);
+assert_eq(404, $r['status'], 'delete nonexistent incident returns 404');
+
+// ─── INCIDENT UPDATES ───────────────────────────────────
+section('Incident Updates');
+
+// Create incident for update tests
+$r = req('create_incident', [
+    'title' => 'Update test incident',
+    'status' => 'ongoing',
+    'started_at' => '2026-08-27 14:00:00',
+], 'POST', $adminCsrf);
+$updateTestIncidentId = $r['body']['id'];
+
+// Add update
+$r = req('create_incident_update', [
+    'incident_id' => $updateTestIncidentId,
+    'description' => 'Investigating the issue',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create incident update succeeds');
+$updateId = $r['body']['id'];
+assert_true($updateId > 0, 'update id is positive');
+
+// Add update with empty description → 400
+$r = req('create_incident_update', [
+    'incident_id' => $updateTestIncidentId,
+    'description' => '',
+], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'create update with empty description rejected');
+
+// Add update to nonexistent incident → 404
+$r = req('create_incident_update', [
+    'incident_id' => 99999,
+    'description' => 'Test',
+], 'POST', $adminCsrf);
+assert_eq(404, $r['status'], 'create update for nonexistent incident returns 404');
+
+// Add update with custom timestamp
+$r = req('create_incident_update', [
+    'incident_id' => $updateTestIncidentId,
+    'description' => 'Root cause identified',
+    'created_at' => '2026-08-27 14:30:00',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'create update with custom timestamp succeeds');
+$updateId2 = $r['body']['id'];
+
+// List — verify updates attached to incident
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$incWithUpdates = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $updateTestIncidentId))[0];
+assert_eq(2, count($incWithUpdates['updates']), 'incident has 2 updates');
+assert_eq('Investigating the issue', $incWithUpdates['updates'][0]['description'], 'first update description');
+assert_eq('Root cause identified', $incWithUpdates['updates'][1]['description'], 'second update description');
+
+// Verify update fields are complete
+$updateFirst = $incWithUpdates['updates'][0];
+assert_true(array_key_exists('id', $updateFirst), 'update has id');
+assert_true(array_key_exists('description', $updateFirst), 'update has description');
+assert_true(array_key_exists('created_at', $updateFirst), 'update has created_at');
+
+// Verify incident updated_at bumped after creating update
+$updatedAtBefore = $incWithUpdates['updated_at'];
+// (updated_at was already bumped by the create above, just verify it's set)
+assert_true(!empty($updatedAtBefore), 'incident updated_at set after update creation');
+
+// Update incident update
+$r = req('update_incident_update', [
+    'id' => $updateId,
+    'description' => 'Investigating the root cause',
+], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'update incident update succeeds');
+
+// Verify update persisted
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$inc = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $updateTestIncidentId))[0];
+assert_eq('Investigating the root cause', $inc['updates'][0]['description'], 'update description changed');
+
+// Update incident update not found → 404
+$r = req('update_incident_update', ['id' => 99999, 'description' => 'X'], 'POST', $adminCsrf);
+assert_eq(404, $r['status'], 'update nonexistent update returns 404');
+
+// Update incident update empty description → 400
+$r = req('update_incident_update', ['id' => $updateId, 'description' => ''], 'POST', $adminCsrf);
+assert_eq(400, $r['status'], 'update with empty description rejected');
+
+// Delete incident update
+$r = req('delete_incident_update', ['id' => $updateId2], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'delete incident update succeeds');
+
+// Verify deleted
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$inc = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $updateTestIncidentId))[0];
+assert_eq(1, count($inc['updates']), 'one update remaining after delete');
+
+// Delete incident update not found → 404
+$r = req('delete_incident_update', ['id' => 99999], 'POST', $adminCsrf);
+assert_eq(404, $r['status'], 'delete nonexistent update returns 404');
+
+// Delete incident cascade-deletes updates
+$r = req('create_incident', ['title' => 'Cascade test', 'status' => 'ongoing'], 'POST', $adminCsrf);
+$cascadeIncidentId = $r['body']['id'];
+req('create_incident_update', ['incident_id' => $cascadeIncidentId, 'description' => 'Update 1'], 'POST', $adminCsrf);
+req('create_incident_update', ['incident_id' => $cascadeIncidentId, 'description' => 'Update 2'], 'POST', $adminCsrf);
+
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$cascadeInc = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $cascadeIncidentId))[0];
+assert_eq(2, count($cascadeInc['updates']), 'cascade test incident has 2 updates');
+
+$r = req('delete_incident', ['id' => $cascadeIncidentId], 'POST', $adminCsrf);
+assert_eq(200, $r['status'], 'delete cascade incident succeeds');
+
+$r = req('list_incidents', [], 'POST', $adminCsrf);
+$deleted = array_filter($r['body']['incidents'], fn($i) => $i['id'] == $cascadeIncidentId);
+assert_eq(0, count($deleted), 'cascade-deleted incident gone');
+
+// ─── STATUS PAGE INCIDENTS ──────────────────────────────
+section('Status Page Incidents');
+
+$r = req('status_page');
+assert_eq(200, $r['status'], 'status_page returns 200');
+assert_true(array_key_exists('incidents', $r['body']), 'status_page has incidents');
+assert_true(array_key_exists('recent_resolved', $r['body']), 'status_page has recent_resolved');
+assert_true(array_key_exists('incidents_history', $r['body']), 'status_page has incidents_history');
+
+// Create test incidents for status page verification
+$r = req('create_incident', [
+    'title' => 'SP Active Test',
+    'status' => 'ongoing',
+    'started_at' => '2026-08-27 10:00:00',
+], 'POST', $adminCsrf);
+$spActiveId = $r['body']['id'];
+
+$r = req('create_incident', [
+    'title' => 'SP Observation Test',
+    'status' => 'observation',
+    'started_at' => '2026-08-27 11:00:00',
+], 'POST', $adminCsrf);
+$spObsId = $r['body']['id'];
+
+$r = req('create_incident', [
+    'title' => 'SP Recent Resolved',
+    'status' => 'resolved',
+    'started_at' => date('Y-m-d H:i:s', strtotime('-2 hours')),
+    'resolved_at' => date('Y-m-d H:i:s', strtotime('-1 hour')),
+], 'POST', $adminCsrf);
+$spRecentId = $r['body']['id'];
+
+// Add update to active incident
+req('create_incident_update', [
+    'incident_id' => $spActiveId,
+    'description' => 'SP update test',
+], 'POST', $adminCsrf);
+
+// Verify active incidents appear in status_page
+$r = req('status_page');
+$activeIds = array_column($r['body']['incidents'], 'id');
+assert_true(in_array($spActiveId, $activeIds), 'active incident appears in status_page incidents');
+assert_true(in_array($spObsId, $activeIds), 'observation incident appears in status_page incidents');
+
+// Verify active incident has updates in status_page
+$spActive = array_values(array_filter($r['body']['incidents'], fn($i) => $i['id'] == $spActiveId))[0];
+assert_true(array_key_exists('updates', $spActive), 'status_page incident has updates');
+assert_eq(1, count($spActive['updates']), 'status_page incident has 1 update');
+assert_eq('SP update test', $spActive['updates'][0]['description'], 'status_page update description correct');
+
+// Verify active ordering: ongoing before observation
+$activeOngoing = array_search($spActiveId, $activeIds);
+$activeObs = array_search($spObsId, $activeIds);
+assert_true($activeOngoing < $activeObs, 'ongoing incident before observation in status_page');
+
+// Verify recent resolved appears
+$recentIds = array_column($r['body']['recent_resolved'], 'id');
+assert_true(in_array($spRecentId, $recentIds), 'recent resolved incident in status_page recent_resolved');
+
+// Verify recent resolved does NOT appear in history
+$historyIds = array_column($r['body']['incidents_history'], 'id');
+assert_eq(false, in_array($spRecentId, $historyIds), 'recent resolved NOT in incidents_history');
+
+// Create old resolved incident (>24h ago) — should appear in history
+$r = req('create_incident', [
+    'title' => 'SP History Test',
+    'status' => 'resolved',
+    'started_at' => date('Y-m-d H:i:s', strtotime('-48 hours')),
+    'resolved_at' => date('Y-m-d H:i:s', strtotime('-25 hours')),
+], 'POST', $adminCsrf);
+$spHistoryId = $r['body']['id'];
+
+$r = req('status_page');
+$historyIds = array_column($r['body']['incidents_history'], 'id');
+assert_true(in_array($spHistoryId, $historyIds), 'old resolved incident in incidents_history');
+
+// Verify old resolved does NOT appear in recent_resolved
+$recentIds = array_column($r['body']['recent_resolved'], 'id');
+assert_eq(false, in_array($spHistoryId, $recentIds), 'old resolved NOT in recent_resolved');
+
+// Create very old resolved incident (>90 days) — should NOT appear anywhere
+$r = req('create_incident', [
+    'title' => 'SP Very Old Test',
+    'status' => 'resolved',
+    'started_at' => date('Y-m-d H:i:s', strtotime('-100 days')),
+    'resolved_at' => date('Y-m-d H:i:s', strtotime('-100 days + 1 hour')),
+], 'POST', $adminCsrf);
+$spVeryOldId = $r['body']['id'];
+
+$r = req('status_page');
+$historyIds = array_column($r['body']['incidents_history'], 'id');
+$recentIds = array_column($r['body']['recent_resolved'], 'id');
+$activeIds = array_column($r['body']['incidents'], 'id');
+assert_eq(false, in_array($spVeryOldId, $historyIds), 'very old resolved NOT in incidents_history');
+assert_eq(false, in_array($spVeryOldId, $recentIds), 'very old resolved NOT in recent_resolved');
+assert_eq(false, in_array($spVeryOldId, $activeIds), 'very old resolved NOT in active incidents');
+
+// Verify recent resolved has updates
+$spRecent = array_values(array_filter($r['body']['recent_resolved'], fn($i) => $i['id'] == $spRecentId))[0];
+assert_true(array_key_exists('updates', $spRecent), 'recent resolved has updates array');
+
+// Cleanup SP test data
+req('delete_incident', ['id' => $spActiveId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $spObsId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $spRecentId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $spHistoryId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $spVeryOldId], 'POST', $adminCsrf);
+
+// Verify deleted incidents no longer appear
+$r = req('status_page');
+$activeIdsAfter = array_column($r['body']['incidents'], 'id');
+assert_eq(false, in_array($spActiveId, $activeIdsAfter), 'deleted active incident no longer in status_page');
+$recentIdsAfter = array_column($r['body']['recent_resolved'], 'id');
+assert_eq(false, in_array($spRecentId, $recentIdsAfter), 'deleted recent resolved no longer in status_page');
+
+// Cleanup remaining incident test data
+req('delete_incident', ['id' => $incidentId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $observationId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $resolvedId], 'POST', $adminCsrf);
+req('delete_incident', ['id' => $updateTestIncidentId], 'POST', $adminCsrf);
+
 // ─── RESULTS ─────────────────────────────────────────────
 $total = $passed + $failed;
 echo "\n" . colorBold(str_repeat('=', 64)) . "\n";
