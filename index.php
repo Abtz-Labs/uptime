@@ -2906,7 +2906,9 @@ just stop-cron     # stop background cron</pre>
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.user-dropdown')) closeUserMenu();
             if (!e.target.closest('.hamburger') && !e.target.closest('.mobile-menu')) closeMobileMenu();
-            if (!e.target.closest('.site-actions-menu')) {
+            if (e.target.closest('.site-actions-dropdown')) {
+                e.target.closest('.site-actions-dropdown').classList.remove('open');
+            } else if (!e.target.closest('.site-actions-menu')) {
                 document.querySelectorAll('.site-actions-dropdown.open').forEach(d => d.classList.remove('open'));
             }
         });
@@ -3440,8 +3442,13 @@ just stop-cron     # stop background cron</pre>
                     <td class="hide-mobile">${resolved}</td>
                     <td><span data-elapsed-start="${startMs}"${endMs ? ` data-elapsed-end="${endMs}"` : ''}>${elapsed}</span></td>
                     <td>
-                        <button class="btn btn-sm btn-outlined" onclick="editIncident(${i.id})">Update</button>
-                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteIncident(${i.id}, '${escapeHtml(i.title).replace(/'/g, "\\'")}')">Delete</button>
+                        <div class="site-actions-menu">
+                            <button class="site-actions-trigger" onclick="toggleSiteActions(this)" title="Actions">⋯</button>
+                            <div class="site-actions-dropdown">
+                                <button onclick="editIncident(${i.id})">Update</button>
+                                <button class="danger" onclick="deleteIncident(${i.id}, '${escapeHtml(i.title).replace(/'/g, "\\'")}')">Delete</button>
+                            </div>
+                        </div>
                     </td>
                 </tr>`;
             }
