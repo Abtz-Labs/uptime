@@ -2128,7 +2128,7 @@ function serveDashboard(): void {
             border-radius: var(--radius);
             margin-bottom: 2rem;
             min-height: 5rem;
-            overflow: hidden;
+            overflow: visible;
         }
         .dashboard-group-header {
             display: flex;
@@ -2157,21 +2157,33 @@ function serveDashboard(): void {
         .dashboard-group-sites th:nth-child(2),
         .dashboard-group-sites td:nth-child(2) { width: 6rem; }
         .dashboard-group-sites th:nth-child(3),
-        .dashboard-group-sites td:nth-child(3) { width: 25%; }
+        .dashboard-group-sites td:nth-child(3) { width: 4.5rem; }
         .dashboard-group-sites th:nth-child(4),
-        .dashboard-group-sites td:nth-child(4) { width: 30%; }
+        .dashboard-group-sites td:nth-child(4) { width: 25%; }
         .dashboard-group-sites th:nth-child(5),
-        .dashboard-group-sites td:nth-child(5) { width: 5rem; }
+        .dashboard-group-sites td:nth-child(5) { width: 30%; }
         .dashboard-group-sites th:nth-child(6),
-        .dashboard-group-sites td:nth-child(6) { width: auto; }
+        .dashboard-group-sites td:nth-child(6) { width: 5rem; }
+        .dashboard-group-sites th:nth-child(7),
+        .dashboard-group-sites td:nth-child(7) { width: auto; }
         .dashboard-group-sites th,
         .dashboard-group-sites td { padding: 0.375rem 0.5rem; }
+        .site-indicators { white-space: nowrap; }
+        .site-indicators svg + svg { margin-left: 2px; }
+        .site-actions-menu { position: relative; display: inline-block; }
+        .site-actions-trigger { background: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.25rem 0.5rem; cursor: pointer; color: var(--text-muted); font-size: 1rem; line-height: 1; }
+        .site-actions-trigger:hover { color: var(--text); border-color: var(--text-muted); }
+        .site-actions-dropdown { display: none; position: absolute; right: 0; top: 100%; margin-top: 0.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 120px; }
+        .site-actions-dropdown.open { display: block; }
+        .site-actions-dropdown button { display: block; width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: none; border: none; cursor: pointer; font-size: 0.8125rem; color: var(--text); }
+        .site-actions-dropdown button:hover { background: var(--bg); }
+        .site-actions-dropdown button.danger { color: var(--red); }
         .dashboard-ungrouped {
            border: 1px solid var(--border);
            border-radius: var(--radius);
            min-height: 5rem;
            margin-bottom: 2rem;
-           overflow: hidden;
+           overflow: visible;
         }
         .dashboard-ungrouped .dashboard-group-header {
             background: var(--surface);
@@ -2498,7 +2510,7 @@ just stop-cron     # stop background cron</pre>
                     <table class="help-table">
                         <tr><td><kbd>W</kbd></td><td>Websites</td></tr>
                         <tr><td><kbd>I</kbd></td><td>Incidents</td></tr>
-                        <tr><td><kbd>A</kbd></td><td>Account</td></tr>
+                        <tr><td><kbd>⌘</kbd> <kbd>A</kbd></td><td>Account</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>,</kbd></td><td>App Settings</td></tr>
                         <tr><td><kbd>⌘</kbd> <kbd>S</kbd></td><td>Save (in any form)</td></tr>
                         <tr><td><kbd>Esc</kbd></td><td>Close modal</td></tr>
@@ -2883,10 +2895,20 @@ just stop-cron     # stop background cron</pre>
             document.getElementById('mobile-menu').classList.remove('open');
         }
 
+        function toggleSiteActions(btn) {
+            const dropdown = btn.nextElementSibling;
+            const wasOpen = dropdown.classList.contains('open');
+            document.querySelectorAll('.site-actions-dropdown.open').forEach(d => d.classList.remove('open'));
+            if (!wasOpen) dropdown.classList.add('open');
+        }
+
         // Close menus when clicking outside
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.user-dropdown')) closeUserMenu();
             if (!e.target.closest('.hamburger') && !e.target.closest('.mobile-menu')) closeMobileMenu();
+            if (!e.target.closest('.site-actions-menu')) {
+                document.querySelectorAll('.site-actions-dropdown.open').forEach(d => d.classList.remove('open'));
+            }
         });
 
         async function logout() {
@@ -2917,22 +2939,35 @@ just stop-cron     # stop background cron</pre>
             function siteRow(site) {
                 const rawStatus = site.status || 'unknown';
                 const status = rawStatus === 'unknown' && site.enabled ? 'scheduled' : rawStatus;
+                const icons = [
+                    { on: site.enabled, title: 'Enabled', paths: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>' },
+                    { on: site.visible, title: 'Visible', paths: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' },
+                    { on: site.show_url, title: 'Show URL', paths: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>' },
+                    { on: site.notify, title: 'Notifications', paths: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>' }
+                ].map(i => `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${i.on ? 'var(--green)' : 'var(--text-muted)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:${i.on ? 1 : 0.35};vertical-align:-1px" title="${i.title}">${i.paths}</svg>`).join('');
+                const siteName = escapeHtml(site.name);
                 return `<tr data-id="${site.id}">
                     <td><span class="drag-handle" title="Drag to reorder">⠿</span></td>
                     <td><span class="status-badge ${status}">${status}</span></td>
-                    <td>${escapeHtml(site.name)}</td>
+                    <td class="hide-mobile site-indicators">${icons}</td>
+                    <td>${siteName}</td>
                     <td class="hide-mobile"><a href="${escapeHtml(site.url)}" target="_blank" style="color:var(--text-muted)">${escapeHtml(site.url)}</a></td>
-                    <td>${site.interval}s</td>
+                    <td class="hide-mobile">${site.interval}s</td>
                     <td>
-                        <button class="btn btn-sm btn-outlined" onclick="showChecks(${site.id}, '${escapeHtml(site.name)}')">Logs</button>
-                        <button class="btn btn-sm btn-outlined" onclick="editSite(${site.id})">Edit</button>
-                        <button class="btn btn-sm btn-outlined btn-outlined-danger" onclick="deleteSite(${site.id}, '${escapeHtml(site.name)}')">Delete</button>
+                        <div class="site-actions-menu">
+                            <button class="site-actions-trigger" onclick="toggleSiteActions(this)" title="Actions">⋯</button>
+                            <div class="site-actions-dropdown">
+                                <button onclick="showChecks(${site.id}, '${siteName}')">Logs</button>
+                                <button onclick="editSite(${site.id})">Edit</button>
+                                <button class="danger" onclick="deleteSite(${site.id}, '${siteName}')">Delete</button>
+                            </div>
+                        </div>
                     </td>
                 </tr>`;
             }
 
             let html = '';
-            const siteTableHead = '<table class="dashboard-sites"><thead><tr><th></th><th>Status</th><th>Name</th><th class="hide-mobile">URL</th><th>Interval</th><th>Actions</th></tr></thead><tbody>';
+            const siteTableHead = '<table class="dashboard-sites"><thead><tr><th></th><th>Status</th><th class="hide-mobile"></th><th>Name</th><th class="hide-mobile">URL</th><th class="hide-mobile">Interval</th><th>Actions</th></tr></thead><tbody>';
 
             for (const group of groups) {
               const gSites = groupsMap[group.id].sites;
@@ -3169,7 +3204,7 @@ just stop-cron     # stop background cron</pre>
 
             if (e.key === 'w' || e.key === 'W') { showSection('sites'); return; }
             if (e.key === 'i' || e.key === 'I') { showSection('incidents'); return; }
-            if (e.key === 'a' || e.key === 'A') { showAccountModal(); return; }
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); showAccountModal(); return; }
             if (e.key === '?') { showHelp(); return; }
             if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); showSettingsModal(); }
         });

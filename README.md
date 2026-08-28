@@ -234,7 +234,7 @@ Check history is retained for 180 days by default (configurable in App Settings)
 | `S` | Websites |
 | `G` | Groups |
 | `I` | Incidents |
-| `A` | Account |
+| `⌘ A` | Account |
 | `⌘ ,` | App Settings |
 | `⌘ S` | Save (in any form) |
 | `Esc` | Close modal |
