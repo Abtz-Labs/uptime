@@ -1833,7 +1833,9 @@ function serveDashboard(): void {
             padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--border);
             background: var(--surface);
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
         .topbar h1 { font-size: 1.25rem; white-space: nowrap; }
         .topbar-right { display: flex; align-items: center; gap: 0.5rem; }
