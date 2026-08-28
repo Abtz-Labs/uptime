@@ -2943,7 +2943,7 @@ just stop-cron     # stop background cron</pre>
                     { on: site.enabled, title: 'Enabled', paths: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>' },
                     { on: site.visible, title: 'Visible', paths: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' },
                     { on: site.show_url, title: 'Show URL', paths: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>' },
-                    { on: site.notify, title: 'Notifications', paths: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>' }
+                    { on: site.notify && site.webhook_count > 0, title: 'Notifications', paths: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>' }
                 ].map(i => `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${i.on ? 'var(--green)' : 'var(--text-muted)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:${i.on ? 1 : 0.35};vertical-align:-1px" title="${i.title}">${i.paths}</svg>`).join('');
                 const siteName = escapeHtml(site.name);
                 return `<tr data-id="${site.id}">
@@ -4153,7 +4153,8 @@ function apiListSites(): void {
     requireAuth();
     $db = getDb();
     $sites = $db->query("
-        SELECT s.*, ss.status, ss.last_check, ss.last_up, ss.last_down
+        SELECT s.*, ss.status, ss.last_check, ss.last_up, ss.last_down,
+               (SELECT COUNT(*) FROM webhooks w WHERE w.site_id = s.id) AS webhook_count
         FROM sites s
         LEFT JOIN site_status ss ON s.id = ss.site_id
         ORDER BY s.position, s.name
