@@ -2,6 +2,18 @@
 
 Session checkpoints for continuity across sessions.
 
+## 2026-08-28
+
+- **Sticky navbar**: `.topbar` changed from `position: relative` to `position: sticky; top: 0; z-index: 1000`
+- **Keyboard shortcut**: `A` (account) changed to `⌘A`/`Ctrl+A` with `e.preventDefault()`; updated in code, README, help modal, memory.md
+- **Site indicators column**: new column between Status and Name in dashboard site table; 4 inline SVG icons (circle-check, eye, link, bell) for enabled/visible/show_url/notify; ON = green full opacity, OFF = muted 35% opacity
+- **Notifications indicator logic**: bell icon ON only when `site.notify && site.webhook_count > 0`; `apiListSites()` now includes `(SELECT COUNT(*) FROM webhooks WHERE site_id = s.id) AS webhook_count`
+- **Mobile responsive**: on < 641px, hidden columns: Indicators, URL, Interval; actions replaced with `⋯` dropdown menu (same pattern for both Sites and Incidents tables)
+- **Actions dropdown**: shared `.site-actions-menu` / `.site-actions-dropdown` component; `toggleSiteActions()` function; closes on click-outside and on option click
+- **Overflow fix**: `.dashboard-group` and `.dashboard-ungrouped` changed from `overflow: hidden` to `overflow: visible` to unclip dropdowns
+- **Incidents table**: Update/Delete buttons replaced with same `⋯` dropdown as Sites
+- Test count: 277 (all passing)
+
 ## 2026-08-25
 
 - **Per-site `show_url` toggle**: new `show_url` column on `sites` table (default 1). When disabled, the status page API strips the `url` field from the site response — no link, no URL text displayed publicly. DB migration v3→v4.
