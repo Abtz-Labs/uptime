@@ -3154,6 +3154,10 @@ just stop-cron     # stop background cron</pre>
             const plotW = W - pad.left - pad.right;
             const plotH = H - pad.top - pad.bottom;
 
+            const isLight = document.documentElement.classList.contains('light');
+            const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
+            const labelColor = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)';
+
             const times = checks.map(c => new Date(c.checked_at + 'Z').getTime());
             const values = checks.map(c => c.response_time || 0);
             const maxVal = Math.max(...values, 100);
@@ -3163,20 +3167,20 @@ just stop-cron     # stop background cron</pre>
             ctx.clearRect(0, 0, W, H);
 
             // Grid lines
-            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.strokeStyle = gridColor;
             ctx.lineWidth = 1;
             const yTicks = 5;
             for (let i = 0; i <= yTicks; i++) {
                 const y = pad.top + plotH - (i / yTicks) * plotH;
                 ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
-                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.fillStyle = labelColor;
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'right';
                 ctx.fillText(Math.round(maxVal * i / yTicks) + '', pad.left - 6, y + 3);
             }
 
             // X-axis labels
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillStyle = labelColor;
             ctx.textAlign = 'center';
             const xTicks = Math.min(8, checks.length);
             for (let i = 0; i < xTicks; i++) {
@@ -3190,7 +3194,7 @@ just stop-cron     # stop background cron</pre>
             ctx.save();
             ctx.translate(12, pad.top + plotH / 2);
             ctx.rotate(-Math.PI / 2);
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillStyle = labelColor;
             ctx.font = '10px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('Resp. Time (ms)', 0, 0);
