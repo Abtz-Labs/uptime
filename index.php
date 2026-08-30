@@ -4283,11 +4283,11 @@ function apiListChecks(): void {
 
     if (!empty($_GET['from'])) {
         $sql .= " AND checked_at >= ?";
-        $params[] = $_GET['from'];
+        $params[] = preg_replace('/\.\d+Z$/', '', str_replace('T', ' ', $_GET['from']));
     }
     if (!empty($_GET['to'])) {
         $sql .= " AND checked_at <= ?";
-        $params[] = $_GET['to'];
+        $params[] = preg_replace('/\.\d+Z$/', '', str_replace('T', ' ', $_GET['to']));
     }
 
     $sql .= " ORDER BY checked_at DESC LIMIT 500";

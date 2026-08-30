@@ -376,6 +376,12 @@ $site = array_values(array_filter($r['body'], fn($s) => $s['id'] == $siteId))[0]
 assert_true(!empty($site['status']), 'site has status field');
 assert_eq('up', $site['status'], 'site status is up in list_sites');
 
+// Regression: list_checks with ISO 8601 from param (JS toISOString format)
+$fromIso = date('c', strtotime('-1 hour'));
+$r = req('list_checks', ['site_id' => $siteId, 'from' => $fromIso]);
+assert_eq(200, $r['status'], 'list_checks with ISO from param returns 200');
+assert_true(count($r['body']) >= 1, 'list_checks with ISO from param returns results');
+
 // ─── WEBHOOKS (per-site) ─────────────────────────────────
 section('Webhooks');
 
