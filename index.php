@@ -2765,6 +2765,12 @@ just stop-cron     # stop background cron</pre>
             return d.toLocaleString(APP_LOCALE || undefined, { timeZone: APP_LOCALE === 'UTC' ? 'UTC' : undefined });
         }
 
+        function fmtInterval(seconds) {
+            if (seconds >= 3600) return (seconds / 3600) + ' hour';
+            if (seconds >= 60) return (seconds / 60) + ' min';
+            return seconds + 's';
+        }
+
         function fmtResolvedRelative(startStr, endStr) {
             if (!startStr || !endStr) return '—';
             const s = new Date(startStr + 'Z');
@@ -2954,7 +2960,7 @@ just stop-cron     # stop background cron</pre>
                     <td class="hide-mobile site-indicators">${icons}</td>
                     <td>${siteName}</td>
                     <td class="hide-mobile"><a href="${escapeHtml(site.url)}" target="_blank" style="color:var(--text-muted)">${escapeHtml(site.url)}</a></td>
-                    <td class="hide-mobile">${site.interval}s</td>
+                    <td class="hide-mobile">${fmtInterval(site.interval)}</td>
                     <td>
                         <div class="site-actions-menu">
                             <button class="site-actions-trigger" onclick="toggleSiteActions(this)" title="Actions">⋯</button>
