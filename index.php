@@ -2391,6 +2391,7 @@ function serveDashboard(): void {
                     <option value="30d">Last 30 days</option>
                 </select>
             </div>
+            <canvas id="checks-chart" style="width:100%;height:180px;margin-bottom:1rem;display:none"></canvas>
             <div id="checks-content"><div class="empty">Loading...</div></div>
             <div class="form-actions">
                 <button type="button" class="btn btn-gray" onclick="closeModal('checks-modal')">Close</button>
@@ -2961,6 +2962,7 @@ just stop-cron     # stop background cron</pre>
                     <td>${siteName}</td>
                     <td class="hide-mobile"><a href="${escapeHtml(site.url)}" target="_blank" style="color:var(--text-muted)">${escapeHtml(site.url)}</a></td>
                     <td class="hide-mobile">${fmtInterval(site.interval)}</td>
+                    <td>${site.response_time != null ? site.response_time + 'ms' : '—'}</td>
                     <td>
                         <div class="site-actions-menu">
                             <button class="site-actions-trigger" onclick="toggleSiteActions(this)" title="Actions">⋯</button>
@@ -2975,7 +2977,7 @@ just stop-cron     # stop background cron</pre>
             }
 
             let html = '';
-            const siteTableHead = '<table class="dashboard-sites"><thead><tr><th></th><th>Status</th><th class="hide-mobile"></th><th>Name</th><th class="hide-mobile">URL</th><th class="hide-mobile">Interval</th><th>Actions</th></tr></thead><tbody>';
+            const siteTableHead = '<table class="dashboard-sites"><thead><tr><th></th><th>Status</th><th class="hide-mobile"></th><th>Name</th><th class="hide-mobile">URL</th><th class="hide-mobile">Interval</th><th>Response</th><th>Actions</th></tr></thead><tbody>';
 
             for (const group of groups) {
               const gSites = groupsMap[group.id].sites;
@@ -3125,16 +3127,98 @@ just stop-cron     # stop background cron</pre>
         async function loadChecksData() {
             if (!_checksSiteId) return;
             const params = { site_id: _checksSiteId, ...getChecksPeriodParams() };
-            const checks = await api('list_checks', params);
-            if (!checks.length) {
+            const res = await api('list_checks', params);
+            const chart = res.chart || [];
+            const events = res.events || [];
+            if (!chart.length && !events.length) {
+                document.getElementById('checks-chart').style.display = 'none';
                 document.getElementById('checks-content').innerHTML = '<div class="empty">No checks recorded yet.</div>';
                 return;
             }
-            renderChecks(checks);
+            renderChart(chart);
+            renderChecks(events);
+        }
+
+        function renderChart(checks) {
+            const canvas = document.getElementById('checks-chart');
+            if (!checks.length) { canvas.style.display = 'none'; return; }
+            canvas.style.display = 'block';
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            const W = rect.width, H = rect.height;
+            const pad = { top: 10, right: 10, bottom: 30, left: 50 };
+            const plotW = W - pad.left - pad.right;
+            const plotH = H - pad.top - pad.bottom;
+
+            const times = checks.map(c => new Date(c.checked_at + 'Z').getTime());
+            const values = checks.map(c => c.response_time || 0);
+            const maxVal = Math.max(...values, 100);
+            const minTime = times[0], maxTime = times[times.length - 1];
+            const timeRange = maxTime - minTime || 1;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Grid lines
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.lineWidth = 1;
+            const yTicks = 5;
+            for (let i = 0; i <= yTicks; i++) {
+                const y = pad.top + plotH - (i / yTicks) * plotH;
+                ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.fillText(Math.round(maxVal * i / yTicks) + '', pad.left - 6, y + 3);
+            }
+
+            // X-axis labels
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.textAlign = 'center';
+            const xTicks = Math.min(8, checks.length);
+            for (let i = 0; i < xTicks; i++) {
+                const t = minTime + (i / (xTicks - 1 || 1)) * timeRange;
+                const x = pad.left + (i / (xTicks - 1 || 1)) * plotW;
+                const d = new Date(t);
+                ctx.fillText(d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'), x, H - 8);
+            }
+
+            // Y-axis label
+            ctx.save();
+            ctx.translate(12, pad.top + plotH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Resp. Time (ms)', 0, 0);
+            ctx.restore();
+
+            // Line path
+            ctx.beginPath();
+            for (let i = 0; i < checks.length; i++) {
+                const x = pad.left + ((times[i] - minTime) / timeRange) * plotW;
+                const y = pad.top + plotH - (values[i] / maxVal) * plotH;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 1.5;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Fill area under line
+            const lastX = pad.left + plotW;
+            ctx.lineTo(lastX, pad.top + plotH);
+            ctx.lineTo(pad.left, pad.top + plotH);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(34,197,94,0.1)';
+            ctx.fill();
         }
 
         function renderChecks(checks) {
-            let html = '<table class="checks-table"><thead><tr><th>Time</th><th>Status</th><th>Code</th><th>Response</th><th>Message</th></tr></thead><tbody>';
+            let html = '<table class="checks-table"><thead><tr><th>Since</th><th>Status</th><th>Code</th><th>Response</th><th>Message</th></tr></thead><tbody>';
             for (const c of checks) {
                 const time = fmtDate(c.checked_at);
                 html += `<tr>
@@ -3153,10 +3237,16 @@ just stop-cron     # stop background cron</pre>
             _checksSiteId = siteId;
             document.getElementById('checks-modal-title').textContent = siteName + ' logs';
             document.getElementById('checks-period').value = '6h';
+            document.getElementById('checks-chart').style.display = 'none';
             document.getElementById('checks-content').innerHTML = '<div class="empty">Loading...</div>';
             document.getElementById('checks-modal').classList.add('active');
             await loadChecksData();
         }
+
+        let _lastChecksChart = [];
+        const _origRenderChart = renderChart;
+        renderChart = function(checks) { _lastChecksChart = checks; _origRenderChart(checks); };
+        window.addEventListener('resize', () => { if (_lastChecksChart.length) _origRenderChart(_lastChecksChart); });
 
         document.getElementById('site-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -4167,7 +4257,8 @@ function apiListSites(): void {
     $db = getDb();
     $sites = $db->query("
         SELECT s.*, ss.status, ss.last_check, ss.last_up, ss.last_down,
-               (SELECT COUNT(*) FROM webhooks w WHERE w.site_id = s.id) AS webhook_count
+               (SELECT COUNT(*) FROM webhooks w WHERE w.site_id = s.id) AS webhook_count,
+               (SELECT response_time FROM checks WHERE site_id = s.id ORDER BY checked_at DESC LIMIT 1) AS response_time
         FROM sites s
         LEFT JOIN site_status ss ON s.id = ss.site_id
         ORDER BY s.position, s.name
@@ -4284,24 +4375,37 @@ function apiListChecks(): void {
     $siteId = (int) ($_GET['site_id'] ?? 0);
     if (!$siteId) jsonResponse(['error' => 'Missing site_id'], 400);
 
-    $sql = "SELECT * FROM checks WHERE site_id = ?";
+    $where = "WHERE site_id = ?";
     $params = [$siteId];
 
     if (!empty($_GET['from'])) {
-        $sql .= " AND checked_at >= ?";
+        $where .= " AND checked_at >= ?";
         $params[] = preg_replace('/\.\d+Z$/', '', str_replace('T', ' ', $_GET['from']));
     }
     if (!empty($_GET['to'])) {
-        $sql .= " AND checked_at <= ?";
+        $where .= " AND checked_at <= ?";
         $params[] = preg_replace('/\.\d+Z$/', '', str_replace('T', ' ', $_GET['to']));
     }
 
-    $sql .= " ORDER BY checked_at DESC LIMIT 500";
-
     $db = getDb();
-    $stmt = $db->prepare($sql);
+
+    // All checks for response time chart
+    $chartSql = "SELECT checked_at, status, response_time, status_code, message FROM checks $where ORDER BY checked_at ASC LIMIT 500";
+    $stmt = $db->prepare($chartSql);
     $stmt->execute($params);
-    jsonResponse($stmt->fetchAll());
+    $allChecks = $stmt->fetchAll();
+
+    // Status transition events for the table
+    $eventsSql = "SELECT checked_at, status, status_code, response_time, message FROM (
+        SELECT checked_at, status, status_code, response_time, message,
+               LAG(status) OVER (ORDER BY checked_at) AS prev_status
+        FROM checks $where ORDER BY checked_at ASC LIMIT 500
+    ) WHERE prev_status IS NULL OR status != prev_status ORDER BY checked_at DESC";
+    $stmt = $db->prepare($eventsSql);
+    $stmt->execute($params);
+    $events = $stmt->fetchAll();
+
+    jsonResponse(['chart' => $allChecks, 'events' => $events]);
 }
 
 // ============================================================================

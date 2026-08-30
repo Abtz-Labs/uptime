@@ -364,8 +364,8 @@ assert_true(array_key_exists('checked', $r['body']), 'run_checks reports checked
 // List checks for the site
 $r = req('list_checks', ['site_id' => $siteId]);
 assert_eq(200, $r['status'], 'list_checks returns 200');
-assert_true(count($r['body']) >= 1, 'at least one check after run_checks');
-$check = $r['body'][0];
+assert_true(count($r['body']['events']) >= 1, 'at least one check after run_checks');
+$check = $r['body']['events'][0];
 assert_eq('up', $check['status'], 'healthy site (example.com) is reported as up');
 assert_eq(200, $check['status_code'], 'check status_code is 200');
 assert_true(!empty($check['checked_at']), 'check has checked_at');
@@ -380,7 +380,7 @@ assert_eq('up', $site['status'], 'site status is up in list_sites');
 $fromIso = date('c', strtotime('-1 hour'));
 $r = req('list_checks', ['site_id' => $siteId, 'from' => $fromIso]);
 assert_eq(200, $r['status'], 'list_checks with ISO from param returns 200');
-assert_true(count($r['body']) >= 1, 'list_checks with ISO from param returns results');
+assert_true(count($r['body']['chart']) >= 1, 'list_checks with ISO from param returns results');
 
 // ─── WEBHOOKS (per-site) ─────────────────────────────────
 section('Webhooks');
@@ -758,7 +758,7 @@ $r = req('run_checks');
 assert_eq(200, $r['status'], 'run_checks for keyword test');
 
 $r = req('list_checks', ['site_id' => $kwSiteId]);
-$lastCheck = $r['body'][0] ?? [];
+$lastCheck = $r['body']['events'][0] ?? [];
 assert_eq('up', $lastCheck['status'] ?? '', 'case-insensitive keyword match marks site up');
 
 // Keyword NOT found marks site down
@@ -770,7 +770,7 @@ $r = req('run_checks');
 assert_eq(200, $r['status'], 'run_checks for missing keyword');
 
 $r = req('list_checks', ['site_id' => $kwSiteId]);
-$lastCheck = $r['body'][0] ?? [];
+$lastCheck = $r['body']['events'][0] ?? [];
 assert_eq('down', $lastCheck['status'] ?? '', 'missing keyword marks site down');
 assert_true(str_contains($lastCheck['message'] ?? '', 'not found'), 'message indicates keyword not found');
 
