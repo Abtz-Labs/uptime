@@ -838,7 +838,7 @@ function serveStatusPage(): void {
         }
         .site-name a { color: inherit; text-decoration: none; }
         .site-name a:hover { text-decoration: underline; }
-        .site-url { color: var(--text-muted); font-size: 0.75rem; }
+        .site-url { color: var(--text-muted); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .site-meta {
             text-align: right;
             flex-shrink: 0;
