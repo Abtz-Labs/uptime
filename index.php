@@ -2166,6 +2166,7 @@ function serveDashboard(): void {
         .dashboard-group-sites td:nth-child(4) { width: 25%; }
         .dashboard-group-sites th:nth-child(5),
         .dashboard-group-sites td:nth-child(5) { width: 30%; }
+        .dashboard-group-sites td:nth-child(5) a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dashboard-group-sites th:nth-child(6),
         .dashboard-group-sites td:nth-child(6) { width: 5rem; }
         .dashboard-group-sites th:nth-child(7),
@@ -3436,6 +3437,7 @@ just stop-cron     # stop background cron</pre>
             }
             toggleWebhookForm();
             loadSiteWebhooks(siteId);
+            loadDashboard();
         }
 
         async function deleteSiteWebhook(id) {
@@ -3443,6 +3445,7 @@ just stop-cron     # stop background cron</pre>
             const siteId = document.getElementById('site-id').value;
             await api('delete_webhook', { id }, 'POST');
             loadSiteWebhooks(siteId);
+            loadDashboard();
         }
 
         async function testSiteWebhook(id, btn) {
