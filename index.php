@@ -494,21 +494,23 @@ function runChecks(): array {
 
         // Send notification on status change
         if ($site['notify'] && $prevStatusValue !== 'unknown' && $prevStatusValue !== $result['status']) {
-            // Check last_notified_at to prevent spam (5-minute cooldown)
-            $notified = $db->prepare("SELECT last_notified_at FROM site_status WHERE site_id = ?");
-            $notified->execute([$site['id']]);
-            $notifiedRow = $notified->fetch();
+            $event = $result['status'] === 'down' ? 'down' : 'recover';
 
+            // Always notify on recovery (DOWN→UP); apply cooldown only for repeated DOWN alerts
             $shouldNotify = true;
-            if ($notifiedRow && $notifiedRow['last_notified_at']) {
-                $lastNotified = strtotime($notifiedRow['last_notified_at']);
-                if ((time() - $lastNotified) < 300) { // 5 minutes
-                    $shouldNotify = false;
+            if ($event === 'down') {
+                $notified = $db->prepare("SELECT last_notified_at FROM site_status WHERE site_id = ?");
+                $notified->execute([$site['id']]);
+                $notifiedRow = $notified->fetch();
+                if ($notifiedRow && $notifiedRow['last_notified_at']) {
+                    $lastNotified = strtotime($notifiedRow['last_notified_at']);
+                    if ((time() - $lastNotified) < 300) {
+                        $shouldNotify = false;
+                    }
                 }
             }
 
             if ($shouldNotify) {
-                $event = $result['status'] === 'down' ? 'down' : 'recover';
                 sendNotifications($site['id'], $event, $site['name'], $site['url'], $result['message']);
             }
         }
