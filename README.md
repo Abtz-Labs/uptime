@@ -119,6 +119,16 @@ Replace `https://your-host` with your actual URL and `YOUR_TOKEN` with the cron 
 
 To prevent unauthorized access to the `run_checks` and `cleanup_checks` endpoints, generate a cron token in the admin dashboard (Settings → Automation). Once a token is generated, both endpoints require it via the `?token=...` query parameter. Without a generated token, the endpoints remain open (backward compatible).
 
+### Health Check
+
+A health check endpoint is available for external monitoring tools to verify that Uptime itself is running and the database is accessible:
+
+```bash
+curl -sf "https://your-host/?action=health_check"
+```
+
+Returns `200` with `{"status": "healthy"}` when the app and database are reachable, or `503` with `{"status": "unhealthy", "error": "..."}` on failure. No authentication or cron token required.
+
 ## User Manual
 
 ### First Run

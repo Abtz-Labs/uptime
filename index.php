@@ -676,6 +676,9 @@ if ($action) {
         // Cleanup
         'cleanup_checks' => apiCleanupChecks(),
 
+        // Health
+        'health_check' => apiHealthCheck(),
+
         default => jsonResponse(['error' => 'Unknown action'], 404),
     };
     exit;
@@ -5049,4 +5052,14 @@ function apiCleanupChecks(): void {
     verifyCronToken();
     $result = cleanupChecks();
     jsonResponse($result);
+}
+
+function apiHealthCheck(): void {
+    $db = getDb();
+    try {
+        $db->query('SELECT 1');
+    } catch (\Exception $e) {
+        jsonResponse(['status' => 'unhealthy', 'error' => 'Database unreachable'], 503);
+    }
+    jsonResponse(['status' => 'healthy']);
 }

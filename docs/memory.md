@@ -2,6 +2,12 @@
 
 Session checkpoints for continuity across sessions.
 
+## 2026-09-03
+
+- **Health check endpoint**: `?action=health_check` returns `{"status":"healthy"}` (200) or `{"status":"unhealthy","error":"..."}` (503); pings DB via `SELECT 1`; no auth or cron token required
+- Added to README under "Health Check" section with curl example
+- Test count: 281 (all passing)
+
 ## 2026-08-28
 
 - **Sticky navbar**: `.topbar` changed from `position: relative` to `position: sticky; top: 0; z-index: 1000`
@@ -12,7 +18,7 @@ Session checkpoints for continuity across sessions.
 - **Actions dropdown**: shared `.site-actions-menu` / `.site-actions-dropdown` component; `toggleSiteActions()` function; closes on click-outside and on option click
 - **Overflow fix**: `.dashboard-group` and `.dashboard-ungrouped` changed from `overflow: hidden` to `overflow: visible` to unclip dropdowns
 - **Incidents table**: Update/Delete buttons replaced with same `⋯` dropdown as Sites
-- Test count: 277 (all passing)
+- Test count: 277 → 281 (health check added)
 
 ## 2026-08-25
 

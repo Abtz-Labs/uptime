@@ -1393,6 +1393,13 @@ req('delete_incident', ['id' => $observationId], 'POST', $adminCsrf);
 req('delete_incident', ['id' => $resolvedId], 'POST', $adminCsrf);
 req('delete_incident', ['id' => $updateTestIncidentId], 'POST', $adminCsrf);
 
+// ─── HEALTH CHECK ─────────────────────────────────────────
+section('Health Check');
+
+$r = req('health_check');
+assert_eq(200, $r['status'], 'health_check returns 200');
+assert_eq('healthy', $r['body']['status'], 'health_check reports healthy');
+
 // ─── RESULTS ─────────────────────────────────────────────
 $total = $passed + $failed;
 echo "\n" . colorBold(str_repeat('=', 64)) . "\n";
