@@ -113,7 +113,7 @@ function initDatabase(): void {
             url TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'generic',
             enabled INTEGER DEFAULT 1,
-            events TEXT DEFAULT 'down,recover',
+            events TEXT DEFAULT 'down,up',
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
         );
@@ -215,7 +215,12 @@ function migrateDatabase(PDO $db): void {
         }
     }
 
-    $db->exec('PRAGMA user_version = 7');
+    // Version 7 → 8: Migrate webhook events from 'recover' to 'up'
+    if ($version < 8) {
+        $db->exec("UPDATE webhooks SET events = REPLACE(events, 'recover', 'up') WHERE events LIKE '%recover%'");
+    }
+
+    $db->exec('PRAGMA user_version = 8');
 }
 
 function rotateRecoveryKey(int $userId): string {
@@ -494,7 +499,7 @@ function runChecks(): array {
 
         // Send notification on status change
         if ($site['notify'] && $prevStatusValue !== 'unknown' && $prevStatusValue !== $result['status']) {
-            $event = $result['status'] === 'down' ? 'down' : 'recover';
+            $event = $result['status'] === 'down' ? 'down' : 'up';
 
             // Always notify on recovery (DOWN→UP); apply cooldown only for repeated DOWN alerts
             $shouldNotify = true;
@@ -2695,8 +2700,8 @@ just stop-cron     # stop background cron</pre>
                             <label for="site-webhook-event-down">Down</label>
                         </div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="site-webhook-event-recover" checked>
-                            <label for="site-webhook-event-recover">Recover</label>
+                            <input type="checkbox" id="site-webhook-event-up" checked>
+                            <label for="site-webhook-event-up">Up</label>
                         </div>
                     </div>
                     <div class="webhook-item-actions">
@@ -3361,7 +3366,7 @@ just stop-cron     # stop background cron</pre>
                 document.getElementById('site-webhook-message-template').value = '';
                 document.getElementById('site-webhook-slack-template').value = '';
                 document.getElementById('site-webhook-event-down').checked = true;
-                document.getElementById('site-webhook-event-recover').checked = true;
+                document.getElementById('site-webhook-event-up').checked = true;
                 togglePresetFields();
             }
         }
@@ -3407,7 +3412,7 @@ just stop-cron     # stop background cron</pre>
             }
             const events = (hook.events || '').split(',');
             document.getElementById('site-webhook-event-down').checked = events.includes('down');
-            document.getElementById('site-webhook-event-recover').checked = events.includes('recover');
+            document.getElementById('site-webhook-event-up').checked = events.includes('up');
             togglePresetFields();
         }
 
@@ -3417,7 +3422,7 @@ just stop-cron     # stop background cron</pre>
             const editId = document.getElementById('site-webhook-edit-id').value;
             const events = [];
             if (document.getElementById('site-webhook-event-down').checked) events.push('down');
-            if (document.getElementById('site-webhook-event-recover').checked) events.push('recover');
+            if (document.getElementById('site-webhook-event-up').checked) events.push('up');
             const type = document.getElementById('site-webhook-type').value;
             const data = {
                 site_id: parseInt(siteId),
@@ -4538,7 +4543,7 @@ function apiCreateWebhook(): void {
     $check->execute([$siteId]);
     if (!$check->fetch()) jsonResponse(['error' => 'Site not found'], 404);
 
-    $db->prepare("INSERT INTO webhooks (site_id, url, type, events, bot_token, chat_id, message_template) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$siteId, $url, $type, $input['events'] ?? 'down,recover', $botToken ?: null, $chatId ?: null, $messageTemplate]);
+    $db->prepare("INSERT INTO webhooks (site_id, url, type, events, bot_token, chat_id, message_template) VALUES (?, ?, ?, ?, ?, ?, ?)")->execute([$siteId, $url, $type, $input['events'] ?? 'down,up', $botToken ?: null, $chatId ?: null, $messageTemplate]);
     jsonResponse(['id' => (int) $db->lastInsertId()]);
 }
 
