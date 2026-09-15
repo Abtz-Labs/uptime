@@ -2,6 +2,17 @@
 
 Session checkpoints for continuity across sessions.
 
+## 2026-09-15
+
+- **Nord color scheme** adopted across all surfaces (status page, login, setup, dashboard). Reference: nordtheme.com. Palettes mapped from Tailwind slate/emerald into Polar Night (nord0-nord3), Snow Storm (nord4-nord6), Frost (nord7-nord10), Aurora (nord11-nord15)
+- Dark theme: `--bg`=nord0, `--surface`=nord1, `--border`=nord2, `--text`=nord6, `--text-muted`=nord4, `--primary`=nord8, `--primary-hover`=nord10, `--green`=nord14, `--red`=nord11, `--gray`=nord3, `--blue`=nord9
+- New CSS vars: `--amber`=nord13 (degraded), `--orange`=nord12 (severely degraded) — replaced hard-coded `#f59e0b`/`#f97316` across CSS + incident color map
+- Light theme: `--bg`=nord6, `--surface`=#ffffff, `--border`=nord4, `--text`=nord0, `--text-muted`=nord3, `--primary`=nord10, `--primary-hover`=nord9
+- Button text now `var(--bg)` (nord0 dark / nord6 light) for contrast on frost primary buttons; footer link hovers use light-mode primary override for contrast
+- Updated: all `rgba()` badge/chart colors to Nord RGB, canvas chart line/area colors, 4 favicon data URIs (nord2 rect + nord6 text)
+- Version bumped 0.1.1 → 0.2.0 (`package.json` + `APP_VERSION`)
+- Test count: 281 (all passing)
+
 ## 2026-09-03
 
 - **Health check endpoint**: `?action=health_check` returns `{"status":"healthy"}` (200) or `{"status":"unhealthy","error":"..."}` (503); pings DB via `SELECT 1`; no auth or cron token required

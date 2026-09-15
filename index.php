@@ -29,7 +29,7 @@ if (php_sapi_name() === 'cli-server') {
 // ============================================================================
 
 define('APP_NAME', 'Uptime');
-define('APP_VERSION', '0.1.1');
+define('APP_VERSION', '0.2.0');
 define('CRAWLER_VERSION', '1.0.0');
 define('DB_FILE', getenv('UPTIME_DB_FILE') ?: __DIR__ . '/uptime.sqlite');
 define('DEFAULT_RETENTION_DAYS', 180);
@@ -770,28 +770,32 @@ function serveStatusPage(): void
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23334155'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='white' text-anchor='middle'>UP</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23434C5E'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='%23ECEFF4' text-anchor='middle'>UP</text></svg>">
     <title><?= htmlspecialchars($appName) ?> — Status</title>
     <style>
       :root {
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-muted: #94a3b8;
-        --green: #22c55e;
-        --red: #ef4444;
-        --gray: #64748b;
-        --blue: #3b82f6;
+        --bg: #2E3440;
+        --surface: #3B4252;
+        --border: #434C5E;
+        --text: #ECEFF4;
+        --text-muted: #D8DEE9;
+        --green: #A3BE8C;
+        --red: #BF616A;
+        --amber: #EBCB8B;
+        --orange: #D08770;
+        --gray: #4C566A;
+        --blue: #81A1C1;
         --radius: 8px;
       }
 
       .light {
-        --bg: #f8fafc;
+        --bg: #ECEFF4;
         --surface: #ffffff;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --text-muted: #64748b;
+        --border: #D8DEE9;
+        --text: #2E3440;
+        --text-muted: #4C566A;
+        --primary: #5E81AC;
+        --primary-hover: #81A1C1;
       }
 
       * {
@@ -919,11 +923,11 @@ function serveStatusPage(): void
       }
 
       .status-dot.degraded {
-        background: #f59e0b;
+        background: var(--amber);
       }
 
       .status-dot.severely_degraded {
-        background: #f97316;
+        background: var(--orange);
       }
 
       .site-info {
@@ -991,7 +995,7 @@ function serveStatusPage(): void
       }
 
       .timeline-bar.degraded {
-        background: #f59e0b;
+        background: var(--amber);
       }
 
       .timeline-bar.down {
@@ -1040,11 +1044,11 @@ function serveStatusPage(): void
       }
 
       .overall-status-icon.degraded {
-        background: #f59e0b;
+        background: var(--amber);
       }
 
       .overall-status-icon.severely_degraded {
-        background: #f97316;
+        background: var(--orange);
       }
 
       .overall-status-icon.down {
@@ -1146,7 +1150,7 @@ function serveStatusPage(): void
       .incident-badge {
         font-size: 0.6875rem;
         font-weight: 600;
-        color: #fff;
+        color: var(--text);
         padding: 0.125rem 0.5rem;
         border-radius: 9999px;
         white-space: nowrap;
@@ -1502,9 +1506,9 @@ function serveStatusPage(): void
         resolved: 'RESOLVED'
       };
       const _statusColorsInc = {
-        ongoing: '#ef4444',
-        observation: '#f59e0b',
-        resolved: '#22c55e'
+        ongoing: '#BF616A',
+        observation: '#EBCB8B',
+        resolved: '#A3BE8C'
       };
 
       function incidentElapsed(startStr, endStr) {
@@ -1697,27 +1701,31 @@ function serveLoginPage(): void
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23334155'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='white' text-anchor='middle'>UP</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23434C5E'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='%23ECEFF4' text-anchor='middle'>UP</text></svg>">
     <title>Login — <?= APP_NAME ?></title>
     <style>
       :root {
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-muted: #94a3b8;
-        --primary: #3b82f6;
-        --primary-hover: #2563eb;
-        --red: #ef4444;
+        --bg: #2E3440;
+        --surface: #3B4252;
+        --border: #434C5E;
+        --text: #ECEFF4;
+        --text-muted: #D8DEE9;
+        --primary: #88C0D0;
+        --primary-hover: #5E81AC;
+        --amber: #EBCB8B;
+        --orange: #D08770;
+        --red: #BF616A;
         --radius: 8px;
       }
 
       .light {
-        --bg: #f8fafc;
+        --bg: #ECEFF4;
         --surface: #ffffff;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --text-muted: #64748b;
+        --border: #D8DEE9;
+        --text: #2E3440;
+        --text-muted: #4C566A;
+        --primary: #5E81AC;
+        --primary-hover: #81A1C1;
       }
 
       * {
@@ -1805,7 +1813,7 @@ function serveLoginPage(): void
         border: none;
         border-radius: var(--radius);
         background: var(--primary);
-        color: white;
+        color: var(--bg);
         font-size: 1rem;
         cursor: pointer;
       }
@@ -1955,27 +1963,31 @@ function serveSetupPage(): void
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23334155'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='white' text-anchor='middle'>UP</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23434C5E'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='%23ECEFF4' text-anchor='middle'>UP</text></svg>">
     <title>Setup — <?= APP_NAME ?></title>
     <style>
       :root {
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-muted: #94a3b8;
-        --primary: #3b82f6;
-        --primary-hover: #2563eb;
-        --red: #ef4444;
+        --bg: #2E3440;
+        --surface: #3B4252;
+        --border: #434C5E;
+        --text: #ECEFF4;
+        --text-muted: #D8DEE9;
+        --primary: #88C0D0;
+        --primary-hover: #5E81AC;
+        --amber: #EBCB8B;
+        --orange: #D08770;
+        --red: #BF616A;
         --radius: 8px;
       }
 
       .light {
-        --bg: #f8fafc;
+        --bg: #ECEFF4;
         --surface: #ffffff;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --text-muted: #64748b;
+        --border: #D8DEE9;
+        --text: #2E3440;
+        --text-muted: #4C566A;
+        --primary: #5E81AC;
+        --primary-hover: #81A1C1;
       }
 
       * {
@@ -2070,7 +2082,7 @@ function serveSetupPage(): void
         border: none;
         border-radius: var(--radius);
         background: var(--primary);
-        color: white;
+        color: var(--bg);
         font-size: 1rem;
         cursor: pointer;
       }
@@ -2218,30 +2230,34 @@ function serveDashboard(): void
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23334155'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='white' text-anchor='middle'>UP</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23434C5E'/><text x='16' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='%23ECEFF4' text-anchor='middle'>UP</text></svg>">
     <title>Dashboard — <?= APP_NAME ?></title>
     <style>
       :root {
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-muted: #94a3b8;
-        --primary: #3b82f6;
-        --primary-hover: #2563eb;
-        --green: #22c55e;
-        --red: #ef4444;
-        --gray: #64748b;
-        --blue: #3b82f6;
+        --bg: #2E3440;
+        --surface: #3B4252;
+        --border: #434C5E;
+        --text: #ECEFF4;
+        --text-muted: #D8DEE9;
+        --primary: #88C0D0;
+        --primary-hover: #5E81AC;
+        --green: #A3BE8C;
+        --red: #BF616A;
+        --amber: #EBCB8B;
+        --orange: #D08770;
+        --gray: #4C566A;
+        --blue: #81A1C1;
         --radius: 8px;
       }
 
       .light {
-        --bg: #f8fafc;
+        --bg: #ECEFF4;
         --surface: #ffffff;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --text-muted: #64748b;
+        --border: #D8DEE9;
+        --text: #2E3440;
+        --text-muted: #4C566A;
+        --primary: #5E81AC;
+        --primary-hover: #81A1C1;
       }
 
       * {
@@ -2503,7 +2519,7 @@ function serveDashboard(): void
         border: none;
         border-radius: var(--radius);
         background: var(--primary);
-        color: white;
+        color: var(--bg);
         cursor: pointer;
         font-size: 0.875rem;
       }
@@ -2526,7 +2542,7 @@ function serveDashboard(): void
       }
 
       .btn-danger:hover {
-        background: #dc2626;
+        background: #A3575B;
       }
 
       .btn-sm {
@@ -2541,13 +2557,13 @@ function serveDashboard(): void
       }
 
       .btn-outlined:hover {
-        background: rgba(59, 130, 246, 0.15);
+        background: rgba(136, 192, 208, 0.15);
         color: var(--primary);
         border-color: var(--primary);
       }
 
       .btn-outlined-danger:hover {
-        background: rgba(239, 68, 68, 0.15);
+        background: rgba(191, 97, 106, 0.15);
         color: var(--red);
         border-color: var(--red);
       }
@@ -2593,37 +2609,37 @@ function serveDashboard(): void
       }
 
       .status-badge.up {
-        background: rgba(34, 197, 94, 0.15);
+        background: rgba(163, 190, 140, 0.15);
         color: var(--green);
       }
 
       .status-badge.down {
-        background: rgba(239, 68, 68, 0.15);
+        background: rgba(191, 97, 106, 0.15);
         color: var(--red);
       }
 
       .status-badge.unknown {
-        background: rgba(100, 116, 139, 0.15);
+        background: rgba(76, 86, 106, 0.15);
         color: var(--gray);
       }
 
       .status-badge.scheduled {
-        background: rgba(59, 130, 246, 0.15);
+        background: rgba(136, 192, 208, 0.15);
         color: var(--blue);
       }
 
       .status-badge.ongoing {
-        background: rgba(239, 68, 68, 0.15);
+        background: rgba(191, 97, 106, 0.15);
         color: var(--red);
       }
 
       .status-badge.observation {
-        background: rgba(245, 158, 11, 0.15);
-        color: #f59e0b;
+        background: rgba(235, 203, 139, 0.15);
+        color: var(--amber);
       }
 
       .status-badge.resolved {
-        background: rgba(34, 197, 94, 0.15);
+        background: rgba(163, 190, 140, 0.15);
         color: var(--green);
       }
 
@@ -2633,8 +2649,8 @@ function serveDashboard(): void
         border-radius: 9999px;
         font-size: 0.7rem;
         font-weight: 500;
-        background: rgba(245, 158, 11, 0.15);
-        color: #f59e0b;
+        background: rgba(235, 203, 139, 0.15);
+        color: var(--amber);
         cursor: pointer;
         white-space: nowrap;
         vertical-align: middle;
@@ -2653,7 +2669,7 @@ function serveDashboard(): void
 
       .updates-current {
         font-size: 0.85rem;
-        color: var(--text-secondary, #6b7280);
+        color: var(--text-muted);
         margin-bottom: 0.5rem;
       }
 
@@ -2663,12 +2679,12 @@ function serveDashboard(): void
       }
 
       .updates-status.available {
-        color: #f59e0b;
+        color: var(--amber);
         font-weight: 500;
       }
 
       .updates-status.uptodate {
-        color: var(--green, #22c55e);
+        color: var(--green);
       }
 
       .modal-overlay {
@@ -2772,7 +2788,7 @@ function serveDashboard(): void
       }
 
       .btn-gray:hover {
-        background: #475569;
+        background: #3B4252;
       }
 
       .modal-sm {
@@ -2933,6 +2949,14 @@ function serveDashboard(): void
 
       .dashboard-group-sites {
         padding: 0;
+      }
+
+      .dashboard-group-sites tbody {
+        background: var(--surface);
+      }
+
+      #incidents-list tbody {
+        background: var(--surface);
       }
 
       .dashboard-group-sites table {
@@ -4391,8 +4415,8 @@ just stop-cron     # stop background cron</pre>
         const plotH = H - pad.top - pad.bottom;
 
         const isLight = document.documentElement.classList.contains('light');
-        const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
-        const labelColor = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)';
+        const gridColor = isLight ? 'rgba(46,52,64,0.08)' : 'rgba(236,239,244,0.06)';
+        const labelColor = isLight ? 'rgba(46,52,64,0.45)' : 'rgba(236,239,244,0.4)';
 
         const times = checks.map(c => new Date(c.checked_at + 'Z').getTime());
         const values = checks.map(c => c.response_time || 0);
@@ -4448,7 +4472,7 @@ just stop-cron     # stop background cron</pre>
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = '#22c55e';
+        ctx.strokeStyle = '#A3BE8C';
         ctx.lineWidth = 1.5;
         ctx.lineJoin = 'round';
         ctx.stroke();
@@ -4458,7 +4482,7 @@ just stop-cron     # stop background cron</pre>
         ctx.lineTo(lastX, pad.top + plotH);
         ctx.lineTo(pad.left, pad.top + plotH);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(34,197,94,0.1)';
+        ctx.fillStyle = 'rgba(163,190,140,0.1)';
         ctx.fill();
       }
 
