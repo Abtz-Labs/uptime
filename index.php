@@ -781,6 +781,7 @@ function serveStatusPage(): void
         --text-muted: #D8DEE9;
         --green: #A3BE8C;
         --red: #BF616A;
+        --red-dark: #A05058;
         --amber: #EBCB8B;
         --orange: #D08770;
         --gray: #4C566A;
@@ -911,7 +912,7 @@ function serveStatusPage(): void
       }
 
       .status-dot.down {
-        background: var(--red);
+        background: var(--red-dark);
       }
 
       .status-dot.unknown {
@@ -928,6 +929,10 @@ function serveStatusPage(): void
 
       .status-dot.severely_degraded {
         background: var(--orange);
+      }
+
+      .status-dot.mostly_down {
+        background: var(--red);
       }
 
       .site-info {
@@ -999,6 +1004,10 @@ function serveStatusPage(): void
       }
 
       .timeline-bar.down {
+        background: var(--red-dark);
+      }
+
+      .timeline-bar.mostly_down {
         background: var(--red);
       }
 
@@ -1052,6 +1061,10 @@ function serveStatusPage(): void
       }
 
       .overall-status-icon.down {
+        background: var(--red-dark);
+      }
+
+      .overall-status-icon.mostly_down {
         background: var(--red);
       }
 
@@ -1405,6 +1418,7 @@ function serveStatusPage(): void
             operational: 'Operational',
             degraded: 'Degraded',
             severely_degraded: 'Severely Degraded',
+            mostly_down: 'Mostly Down',
             down: 'Down',
             unknown: 'Unknown',
           };
@@ -2243,6 +2257,7 @@ function serveDashboard(): void
         --primary-hover: #5E81AC;
         --green: #A3BE8C;
         --red: #BF616A;
+        --red-dark: #A05058;
         --amber: #EBCB8B;
         --orange: #D08770;
         --gray: #4C566A;
@@ -2614,6 +2629,11 @@ function serveDashboard(): void
       }
 
       .status-badge.down {
+        background: rgba(160, 80, 88, 0.15);
+        color: var(--red-dark);
+      }
+
+      .status-badge.mostly_down {
         background: rgba(191, 97, 106, 0.15);
         color: var(--red);
       }
@@ -6315,9 +6335,10 @@ function apiStatusPage(): void
         $up->execute($groupSiteIds);
         $pct = round(((int) $up->fetch()['cnt'] / $totalCount) * 100, 1);
         $group['uptime_24h'] = $pct;
-        if ($pct >= 85) $group['status'] = 'operational';
-        elseif ($pct >= 20) $group['status'] = 'degraded';
-        elseif ($pct >= 1) $group['status'] = 'severely_degraded';
+        if ($pct >= 96) $group['status'] = 'operational';
+        elseif ($pct >= 80) $group['status'] = 'degraded';
+        elseif ($pct >= 50) $group['status'] = 'severely_degraded';
+        elseif ($pct >= 10) $group['status'] = 'mostly_down';
         else $group['status'] = 'down';
       }
     }
@@ -6344,12 +6365,14 @@ function apiStatusPage(): void
     $pct = $overall['uptime_24h'];
     if ($pct === null) {
       $overall['status'] = 'unknown';
-    } elseif ($pct >= 85) {
+    } elseif ($pct >= 96) {
       $overall['status'] = 'operational';
-    } elseif ($pct >= 20) {
+    } elseif ($pct >= 80) {
       $overall['status'] = 'degraded';
-    } elseif ($pct >= 1) {
+    } elseif ($pct >= 50) {
       $overall['status'] = 'severely_degraded';
+    } elseif ($pct >= 10) {
+      $overall['status'] = 'mostly_down';
     } else {
       $overall['status'] = 'down';
     }
