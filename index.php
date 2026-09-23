@@ -779,11 +779,11 @@ function serveStatusPage(): void
         --border: #434C5E;
         --text: #ECEFF4;
         --text-muted: #D8DEE9;
-        --green: #A3BE8C;
+        --green: #4ADE80;
         --red: #BF616A;
         --red-dark: #A05058;
-        --amber: #EBCB8B;
-        --orange: #D08770;
+        --amber: #FBBF24;
+        --orange: #F97316;
         --gray: #4C566A;
         --blue: #81A1C1;
         --radius: 8px;
@@ -1521,8 +1521,8 @@ function serveStatusPage(): void
       };
       const _statusColorsInc = {
         ongoing: '#BF616A',
-        observation: '#EBCB8B',
-        resolved: '#A3BE8C'
+        observation: '#FBBF24',
+        resolved: '#4ADE80'
       };
 
       function incidentElapsed(startStr, endStr) {
@@ -1726,8 +1726,8 @@ function serveLoginPage(): void
         --text-muted: #D8DEE9;
         --primary: #88C0D0;
         --primary-hover: #5E81AC;
-        --amber: #EBCB8B;
-        --orange: #D08770;
+        --amber: #FBBF24;
+        --orange: #F97316;
         --red: #BF616A;
         --radius: 8px;
       }
@@ -1988,8 +1988,8 @@ function serveSetupPage(): void
         --text-muted: #D8DEE9;
         --primary: #88C0D0;
         --primary-hover: #5E81AC;
-        --amber: #EBCB8B;
-        --orange: #D08770;
+        --amber: #FBBF24;
+        --orange: #F97316;
         --red: #BF616A;
         --radius: 8px;
       }
@@ -2255,11 +2255,11 @@ function serveDashboard(): void
         --text-muted: #D8DEE9;
         --primary: #88C0D0;
         --primary-hover: #5E81AC;
-        --green: #A3BE8C;
+        --green: #4ADE80;
         --red: #BF616A;
         --red-dark: #A05058;
-        --amber: #EBCB8B;
-        --orange: #D08770;
+        --amber: #FBBF24;
+        --orange: #F97316;
         --gray: #4C566A;
         --blue: #81A1C1;
         --radius: 8px;
@@ -2624,7 +2624,7 @@ function serveDashboard(): void
       }
 
       .status-badge.up {
-        background: rgba(163, 190, 140, 0.15);
+        background: rgba(74, 222, 128, 0.15);
         color: var(--green);
       }
 
@@ -2654,12 +2654,12 @@ function serveDashboard(): void
       }
 
       .status-badge.observation {
-        background: rgba(235, 203, 139, 0.15);
+        background: rgba(251, 191, 36, 0.15);
         color: var(--amber);
       }
 
       .status-badge.resolved {
-        background: rgba(163, 190, 140, 0.15);
+        background: rgba(74, 222, 128, 0.15);
         color: var(--green);
       }
 
@@ -2669,7 +2669,7 @@ function serveDashboard(): void
         border-radius: 9999px;
         font-size: 0.7rem;
         font-weight: 500;
-        background: rgba(235, 203, 139, 0.15);
+        background: rgba(251, 191, 36, 0.15);
         color: var(--amber);
         cursor: pointer;
         white-space: nowrap;
@@ -4492,7 +4492,7 @@ just stop-cron     # stop background cron</pre>
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = '#A3BE8C';
+        ctx.strokeStyle = '#4ADE80';
         ctx.lineWidth = 1.5;
         ctx.lineJoin = 'round';
         ctx.stroke();
@@ -4502,7 +4502,7 @@ just stop-cron     # stop background cron</pre>
         ctx.lineTo(lastX, pad.top + plotH);
         ctx.lineTo(pad.left, pad.top + plotH);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(163,190,140,0.1)';
+        ctx.fillStyle = 'rgba(74,222,128,0.1)';
         ctx.fill();
       }
 
