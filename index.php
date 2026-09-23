@@ -29,7 +29,7 @@ if (php_sapi_name() === 'cli-server') {
 // ============================================================================
 
 define('APP_NAME', 'Uptime');
-define('APP_VERSION', '0.2.0');
+define('APP_VERSION', '0.2.1');
 define('CRAWLER_VERSION', '1.0.0');
 define('DB_FILE', getenv('UPTIME_DB_FILE') ?: __DIR__ . '/uptime.sqlite');
 define('DEFAULT_RETENTION_DAYS', 180);
