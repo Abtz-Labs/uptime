@@ -14,7 +14,7 @@ The entire application (backend logic, frontend markup, CSS, and JavaScript) liv
 
 - Monitor unlimited websites with configurable check intervals
 - Status page with timeline bars (green/grey/red) per website
-- Overall uptime indicator (Operational/Degraded/Severely Degraded/Down) with 24h/7d/30d/90d breakdown
+- Overall uptime indicator (Operational/Assumed Operational/Degraded/Severely Degraded/Down) with 24h/7d/30d/90d breakdown
 - Per-group uptime averages on the status page
 - Per-site URL visibility toggle (hide URLs from the public status page)
 - Drag-and-drop group and website reordering
@@ -181,7 +181,7 @@ Active and recently resolved incidents (within 24h) appear on the public status 
 
 The public status page (`/`) shows a read-only view of all visible sites, organized by group. No login required. It auto-refreshes every 30 seconds.
 
-At the top, an overall status indicator shows system health (Operational, Degraded, Severely Degraded, or Down) alongside uptime percentages for the last 24 hours, 7 days, 30 days, and 90 days. Each group also displays its own 24h average uptime in the header.
+At the top, an overall status indicator shows system health (Operational, Assumed Operational, Degraded, Severely Degraded, or Down) alongside uptime percentages for the last 24 hours, 7 days, 30 days, and 90 days. Each group also displays its own 24h average uptime in the header.
 
 Active incidents (On going, Observing) appear above the site list. Recently resolved incidents (within 24h) appear below. Older resolved incidents are in a collapsible history section.
 

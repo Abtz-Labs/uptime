@@ -1072,6 +1072,10 @@ function serveStatusPage(): void
         background: var(--gray);
       }
 
+      .overall-status-icon.assumed_operational {
+        background: var(--green);
+      }
+
       .overall-status-label {
         font-size: 1.125rem;
         font-weight: 600;
@@ -1416,6 +1420,7 @@ function serveStatusPage(): void
         if (overall.status) {
           const statusLabels = {
             operational: 'Operational',
+            assumed_operational: 'Assumed Operational',
             degraded: 'Degraded',
             severely_degraded: 'Severely Degraded',
             mostly_down: 'Mostly Down',
@@ -1425,7 +1430,7 @@ function serveStatusPage(): void
           const checkSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
           const warnSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
           const xSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-          const icon = overall.status === 'operational' ? checkSvg : (overall.status === 'down' ? xSvg : warnSvg);
+          const icon = ['operational', 'assumed_operational'].includes(overall.status) ? checkSvg : (overall.status === 'down' ? xSvg : warnSvg);
 
           const fmt = (v) => v !== null ? v.toFixed(1) + '%' : '—';
           html += `
@@ -6340,6 +6345,10 @@ function apiStatusPage(): void
         elseif ($pct >= 50) $group['status'] = 'severely_degraded';
         elseif ($pct >= 10) $group['status'] = 'mostly_down';
         else $group['status'] = 'down';
+      } else {
+        $any = $db->prepare("SELECT 1 FROM checks WHERE site_id IN ($ph) LIMIT 1");
+        $any->execute($groupSiteIds);
+        $group['status'] = $any->fetch() ? 'assumed_operational' : 'unknown';
       }
     }
   }
@@ -6364,7 +6373,9 @@ function apiStatusPage(): void
 
     $pct = $overall['uptime_24h'];
     if ($pct === null) {
-      $overall['status'] = 'unknown';
+      $any = $db->prepare("SELECT 1 FROM checks WHERE site_id IN ($placeholders) LIMIT 1");
+      $any->execute($siteIds);
+      $overall['status'] = $any->fetch() ? 'assumed_operational' : 'unknown';
     } elseif ($pct >= 96) {
       $overall['status'] = 'operational';
     } elseif ($pct >= 80) {

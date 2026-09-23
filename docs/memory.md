@@ -13,7 +13,8 @@ Session checkpoints for continuity across sessions.
 - Version bumped 0.1.1 → 0.2.0 (`package.json` + `APP_VERSION`)
 - Dashboard & incidents table rows: light theme rows now use `var(--surface)` to match group title color
 - **Status thresholds** updated from 4-tier to 5-tier: ≥96% → Operational, ≥80% → Degraded, ≥50% → Severely Degraded, ≥10% → Mostly Down, <10% → Down. New `mostly_down` status across PHP/CSS/JS. `--red-dark: #A05058` for Down, `--red: #BF616A` for Mostly Down. Status colors: vibrant green `#4ADE80`, amber `#FBBF24`, orange `#F97316`; red kept at original Nord
-- Test count: 284 (all passing)
+- **Assumed Operational** status: when no checks in 24h but historical checks exist, status page shows "Assumed Operational" (green check) instead of "Unknown". True "Unknown" (gray !) only when zero checks ever. Applied to overall and per-group status in `apiStatusPage()`.
+- Test count: 288 (all passing)
 
 ## 2026-09-03
 

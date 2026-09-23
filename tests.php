@@ -565,7 +565,7 @@ assert_true(array_key_exists('uptime_7d', $overall), 'overall has uptime_7d');
 assert_true(array_key_exists('uptime_30d', $overall), 'overall has uptime_30d');
 assert_true(array_key_exists('uptime_90d', $overall), 'overall has uptime_90d');
 assert_true(array_key_exists('status', $overall), 'overall has status');
-assert_true(in_array($overall['status'], ['operational', 'degraded', 'severely_degraded', 'mostly_down', 'down', 'unknown']), 'overall status is valid');
+assert_true(in_array($overall['status'], ['operational', 'assumed_operational', 'degraded', 'severely_degraded', 'mostly_down', 'down', 'unknown']), 'overall status is valid');
 assert_true(is_numeric($overall['uptime_24h']) || $overall['uptime_24h'] === null, 'uptime_24h is numeric or null');
 
 // Group uptime in status page response
@@ -576,7 +576,7 @@ if (count($groupWithSites) > 0) {
     $group = $groupWithSites[0];
     assert_true(array_key_exists('uptime_24h', $group), 'group includes uptime_24h');
     assert_true(array_key_exists('status', $group), 'group includes status');
-    assert_true(in_array($group['status'], ['operational', 'degraded', 'severely_degraded', 'mostly_down', 'down', 'unknown']), 'group status is valid');
+    assert_true(in_array($group['status'], ['operational', 'assumed_operational', 'degraded', 'severely_degraded', 'mostly_down', 'down', 'unknown']), 'group status is valid');
     assert_true(is_numeric($group['uptime_24h']) || $group['uptime_24h'] === null, 'group uptime_24h is numeric or null');
 }
 
@@ -687,6 +687,56 @@ assert_eq('mostly_down', $tg['status'], 'group status is mostly_down at exactly 
 // Clean up threshold tests
 req('delete_site', ['id' => $boundary4SiteId], 'POST', $adminCsrf);
 req('delete_group', ['id' => $thresholdGroupId], 'POST', $adminCsrf);
+req('update_site', ['id' => $siteId, 'visible' => 1], 'POST', $adminCsrf);
+
+// ─── ASSUMED OPERATIONAL ──────────────────────────────
+section('Assumed Operational');
+
+// Create a group and site with old checks (outside 24h window) but none recent
+$r = req('create_group', ['name' => 'Assumed Group'], 'POST', $adminCsrf);
+$assumedGroupId = $r['body']['id'];
+
+$r = req('create_site', ['name' => 'Assumed Site', 'url' => 'https://assumed.test', 'group_id' => $assumedGroupId], 'POST', $adminCsrf);
+$assumedSiteId = $r['body']['id'];
+
+// Hide other visible sites so overall is only this one
+req('update_site', ['id' => $siteId, 'visible' => 0], 'POST', $adminCsrf);
+
+// Insert 10 checks from 48h ago (outside 24h window, within retention)
+$testDb2 = new PDO('sqlite:' . $TEST_DB, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$oldTime = time() - (48 * 3600);
+for ($i = 0; $i < 10; $i++) {
+    $checkedAt = date('Y-m-d H:i:s', $oldTime - ($i * 60));
+    $testDb2->prepare("INSERT INTO checks (site_id, status, status_code, response_time, checked_at) VALUES (?, 'up', 200, 100, ?)")
+        ->execute([$assumedSiteId, $checkedAt]);
+}
+
+// Overall should be assumed_operational (has history, no 24h checks)
+$r = req('status_page');
+$overall = $r['body']['overall'];
+assert_eq('assumed_operational', $overall['status'], 'overall is assumed_operational with old checks but none in 24h');
+
+// Group should also be assumed_operational
+$ag = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $assumedGroupId))[0] ?? [];
+assert_eq('assumed_operational', $ag['status'], 'group is assumed_operational with old checks but none in 24h');
+
+// Now test: zero checks ever → unknown
+$req2 = req('create_site', ['name' => 'Never Checked', 'url' => 'https://never.test', 'group_id' => $assumedGroupId], 'POST', $adminCsrf);
+$neverSiteId = $req2['body']['id'];
+// Hide the assumed site so only the never-checked site is visible
+req('update_site', ['id' => $assumedSiteId, 'visible' => 0], 'POST', $adminCsrf);
+
+$r = req('status_page');
+$overall = $r['body']['overall'];
+assert_eq('unknown', $overall['status'], 'overall is unknown when site has zero checks ever');
+
+$ag = array_values(array_filter($r['body']['groups'], fn($g) => $g['id'] == $assumedGroupId))[0] ?? [];
+assert_eq('unknown', $ag['status'], 'group is unknown when site has zero checks ever');
+
+// Clean up assumed operational tests
+req('delete_site', ['id' => $neverSiteId], 'POST', $adminCsrf);
+req('delete_site', ['id' => $assumedSiteId], 'POST', $adminCsrf);
+req('delete_group', ['id' => $assumedGroupId], 'POST', $adminCsrf);
 req('update_site', ['id' => $siteId, 'visible' => 1], 'POST', $adminCsrf);
 
 // ─── SHOW URL PER-SITE ─────────────────────────────────
