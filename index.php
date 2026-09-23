@@ -967,6 +967,7 @@ function serveStatusPage(): void
       .site-meta {
         text-align: right;
         flex-shrink: 0;
+        min-width: 5rem;
       }
 
       .site-response {
